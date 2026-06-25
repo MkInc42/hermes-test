@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Dashboard</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #242735;
+  --border: #2e3144;
+  --text: #e4e6f0;
+  --text2: #9498ae;
+  --accent: #6c5ce7;
+  --accent2: #00cec9;
+  --accent3: #fd79a8;
+  --success: #00b894;
+  --warning: #fdcb6e;
+  --danger: #e17055;
+  --radius: 12px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --surface2: #f5f6f8;
+  --border: #e0e2e8;
+  --text: #1a1d27;
+  --text2: #6b7280;
+  --shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background 0.3s, color 0.3s;
+}
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(12px);
+}
+.header h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.header-controls { display: flex; gap: 8px; align-items: center; }
+.btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+.btn:hover { background: var(--accent); color: white; border-color: var(--accent); }
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+  padding: 24px 32px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: var(--shadow);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+.card-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text2);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+.col-3 { grid-column: span 3; }
+.col-4 { grid-column: span 4; }
+.col-6 { grid-column: span 6; }
+.col-8 { grid-column: span 8; }
+.col-12 { grid-column: span 12; }
+@media (max-width: 1024px) {
+  .col-3, .col-4 { grid-column: span 6; }
+  .col-6, .col-8 { grid-column: span 12; }
+}
+@media (max-width: 640px) {
+  .grid { padding: 16px; gap: 12px; }
+  .col-3, .col-4, .col-6, .col-8 { grid-column: span 12; }
+}
+
+/* Clock */
+.clock-widget { text-align: center; }
+.clock-time {
+  font-size: 3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+}
+.clock-date { font-size: 0.9rem; color: var(--text2); margin-top: 4px; }
+
+/* Stats */
+.stats-row { display: flex; gap: 12px; }
+.stat-box {
+  flex: 1;
+  background: var(--surface2);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+}
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent2);
+}
+.stat-label { font-size: 0.7rem; color: var(--text2); margin-top: 4px; }
+
+/* Chart */
+.chart-container { position: relative; height: 180px; }
+.chart-canvas { width: 100%; height: 100%; }
+
+/* Terminal */
+.terminal {
+  background: #0d0e14;
+  border-radius: 8px;
+  padding: 14px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.8rem;
+  height: 200px;
+  overflow-y: auto;
+  color: #a8e6cf;
+}
+.terminal-line { margin-bottom: 4px; opacity: 0; animation: fadeIn 0.3s forwards; }
+.terminal-line .prompt { color: var(--accent2); }
+.terminal-line .output { color: #dfe6e9; }
+.terminal-line .error { color: var(--danger); }
+.terminal-input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--accent2);
+  font-family: inherit;
+  font-size: inherit;
+  width: calc(100% - 24px);
+}
+@keyframes fadeIn { to { opacity: 1; } }
+
+/* Pomodoro */
+.pomodoro { text-align: center; }
+.pomodoro-time {
+  font-size: 2.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 8px 0;
+}
+.pomodoro-btns { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
+.pomodoro-btns .btn { padding: 6px 12px; font-size: 0.8rem; }
+.progress-ring { transform: rotate(-90deg); }
+.progress-ring circle {
+  fill: none;
+  stroke-width: 6;
+}
+.progress-bg { stroke: var(--surface2); }
+.progress-fill {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.5s;
+}
+
+/* Notes */
+.notes-area {
+  width: 100%;
+  height: 140px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 12px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  resize: none;
+  outline: none;
+}
+.notes-area:focus { border-color: var(--accent); }
+
+/* Weather */
+.weather-widget { text-align: center; }
+.weather-icon { font-size: 2.5rem; margin: 4px 0; }
+.weather-temp { font-size: 2rem; font-weight: 700; }
+.weather-desc { font-size: 0.85rem; color: var(--text2); }
+.weather-details { display: flex; justify-content: space-around; margin-top: 12px; }
+.weather-detail { text-align: center; }
+.weather-detail-value { font-weight: 600; font-size: 0.95rem; }
+.weather-detail-label { font-size: 0.7rem; color: var(--text2); }
+
+/* System */
+.system-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.system-label { width: 60px; font-size: 0.8rem; color: var(--text2); }
+.system-track {
+  flex: 1;
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.system-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 1s ease;
+}
+.system-pct { width: 40px; text-align: right; font-size: 0.8rem; font-weight: 600; }
+
+/* Tasks */
+.task-list { list-style: none; }
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.task-item:last-child { border: none; }
+.task-check {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.task-check.checked { background: var(--success); border-color: var(--success); }
+.task-check.checked::after { content: '✓'; color: white; font-size: 0.7rem; font-weight: 700; }
+.task-text { font-size: 0.85rem; flex: 1; }
+.task-text.completed { text-decoration: line-through; color: var(--text2); }
+.task-add { display: flex; gap: 8px; margin-top: 12px; }
+.task-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  outline: none;
+}
+.task-input:focus { border-color: var(--accent); }
+
+/* Quote */
+.quote-card {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border: none;
+}
+.quote-text {
+  font-size: 1.1rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: white;
+}
+.quote-author {
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.8);
+  margin-top: 8px;
+  text-align: right;
+}
+
+/* Greeting */
+.greeting {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.greeting-sub { font-size: 0.9rem; color: var(--text2); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>HERMES DASHBOARD</h1>
+  <div class="header-controls">
+    <span id="connectionStatus" style="font-size:0.8rem; color:var(--success);">● Live</span>
+    <button class="btn" onclick="toggleTheme()">Toggle Theme</button>
+  </div>
+</div>
+
+<div class="grid">
+
+  <!-- Greeting + Clock -->
+  <div class="card col-4 clock-widget">
+    <div class="greeting" id="greeting">Hello</div>
+    <div class="greeting-sub" id="greetingSub">Welcome back</div>
+    <div class="clock-time" id="clockTime">00:00:00</div>
+    <div class="clock-date" id="clockDate">Loading...</div>
+  </div>
+
+  <!-- Stats -->
+  <div class="card col-4">
+    <div class="card-title">Quick Stats</div>
+    <div class="stats-row">
+      <div class="stat-box">
+        <div class="stat-value" id="tasksDone">0</div>
+        <div class="stat-label">Tasks Done</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="focusTime">0m</div>
+        <div class="stat-label">Focus Time</div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-value" id="uptime">0h</div>
+        <div class="stat-label">Uptime</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Weather -->
+  <div class="card col-4">
+    <div class="card-title">Weather</div>
+    <div class="weather-widget">
+      <div class="weather-icon" id="weatherIcon">⛅</div>
+      <div class="weather-temp" id="weatherTemp">22°C</div>
+      <div class="weather-desc" id="weatherDesc">Partly Cloudy</div>
+      <div class="weather-details">
+        <div class="weather-detail">
+          <div class="weather-detail-value" id="weatherHumidity">45%</div>
+          <div class="weather-detail-label">Humidity</div>
+        </div>
+        <div class="weather-detail">
+          <div class="weather-detail-value" id="weatherWind">12 km/h</div>
+          <div class="weather-detail-label">Wind</div>
+        </div>
+        <div class="weather-detail">
+          <div class="weather-detail-value" id="weatherFeels">21°</div>
+          <div class="weather-detail-label">Feels Like</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart -->
+  <div class="card col-8">
+    <div class="card-title">Activity (Last 7 Days)</div>
+    <div class="chart-container">
+      <canvas id="activityChart" class="chart-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Pomodoro -->
+  <div class="card col-4">
+    <div class="card-title">Pomodoro Timer</div>
+    <div class="pomodoro">
+      <svg class="progress-ring" width="120" height="120" viewBox="0 0 120 120">
+        <circle class="progress-bg" cx="60" cy="60" r="52"/>
+        <circle class="progress-fill" id="pomoRing" cx="60" cy="60" r="52"
+          stroke-dasharray="326.73" stroke-dashoffset="0"/>
+      </svg>
+      <div class="pomodoro-time" id="pomoTime">25:00</div>
+      <div style="font-size:0.8rem; color:var(--text2);" id="pomoStatus">Ready to focus</div>
+      <div class="pomodoro-btns">
+        <button class="btn" id="pomoStart" onclick="startPomodoro()">Start</button>
+        <button class="btn" onclick="resetPomodoro()">Reset</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Terminal -->
+  <div class="card col-6">
+    <div class="card-title">Terminal</div>
+    <div class="terminal" id="terminal">
+      <div class="terminal-line"><span class="prompt">guest@hermes</span>:<span style="color:#6c5ce7">~</span>$ <span class="output">Welcome to Hermes Terminal v1.0</span></div>
+      <div class="terminal-line"><span class="prompt">guest@hermes</span>:<span style="color:#6c5ce7">~</span>$ <span class="output">Type 'help' for available commands</span></div>
+    </div>
+    <div style="margin-top:8px; display:flex; align-items:center; gap:8px; background:#0d0e14; border-radius:8px; padding:8px 14px;">
+      <span style="color:var(--accent2); font-family:'SF Mono',monospace; font-size:0.8rem;">$</span>
+      <input class="terminal-input" id="termInput" placeholder="Type a command..." autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+
+  <!-- Tasks -->
+  <div class="card col-6">
+    <div class="card-title">Tasks</div>
+    <ul class="task-list" id="taskList"></ul>
+    <div class="task-add">
+      <input class="task-input" id="taskInput" placeholder="Add a task...">
+      <button class="btn" onclick="addTask()">Add</button>
+    </div>
+  </div>
+
+  <!-- System -->
+  <div class="card col-4">
+    <div class="card-title">System Monitor</div>
+    <div class="system-bar">
+      <span class="system-label">CPU</span>
+      <div class="system-track"><div class="system-fill" id="cpuBar" style="width:42%; background:linear-gradient(90deg, var(--accent), var(--accent2));"></div></div>
+      <span class="system-pct" id="cpuPct">42%</span>
+    </div>
+    <div class="system-bar">
+      <span class="system-label">RAM</span>
+      <div class="system-track"><div class="system-fill" id="ramBar" style="width:68%; background:linear-gradient(90deg, var(--accent2), var(--success));"></div></div>
+      <span class="system-pct" id="ramPct">68%</span>
+    </div>
+    <div class="system-bar">
+      <span class="system-label">Disk</span>
+      <div class="system-track"><div class="system-fill" id="diskBar" style="width:55%; background:linear-gradient(90deg, var(--accent3), var(--warning));"></div></div>
+      <span class="system-pct" id="diskPct">55%</span>
+    </div>
+    <div class="system-bar">
+      <span class="system-label">Net</span>
+      <div class="system-track"><div class="system-fill" id="netBar" style="width:23%; background:linear-gradient(90deg, var(--success), var(--accent2));"></div></div>
+      <span class="system-pct" id="netPct">23%</span>
+    </div>
+  </div>
+
+  <!-- Notes -->
+  <div class="card col-4">
+    <div class="card-title">Quick Notes</div>
+    <textarea class="notes-area" id="notesArea" placeholder="Jot down your thoughts..."></textarea>
+  </div>
+
+  <!-- Quote -->
+  <div class="card col-4 quote-card">
+    <div class="quote-text" id="quoteText">"The only way to do great work is to love what you do."</div>
+    <div class="quote-author" id="quoteAuthor">— Steve Jobs</div>
+  </div>
+
+</div>
+
+<script>
+// === THEME ===
+function toggleTheme() {
+  const t = document.documentElement.getAttribute('data-theme');
+  document.documentElement.setAttribute('data-theme', t === 'light' ? 'dark' : 'light');
+  localStorage.setItem('theme', t === 'light' ? 'dark' : 'light');
+  drawChart();
+}
+if (localStorage.getItem('theme') === 'light') {
+  document.documentElement.setAttribute('data-theme', 'light');
+}
+
+// === CLOCK ===
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const s = String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('clockTime').textContent = `${h}:${m}:${s}`;
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('clockDate').textContent = `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+
+  const hour = now.getHours();
+  let greet = 'Good evening';
+  if (hour < 12) greet = 'Good morning';
+  else if (hour < 17) greet = 'Good afternoon';
+  document.getElementById('greeting').textContent = greet;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// === CHART ===
+const chartData = [65, 45, 78, 52, 91, 68, 84];
+const chartLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+function drawChart() {
+  const canvas = document.getElementById('activityChart');
+  const ctx = canvas.getContext('2d');
+  const container = canvas.parentElement;
+  canvas.width = container.clientWidth * 2;
+  canvas.height = container.clientHeight * 2;
+  const w = canvas.width, h = canvas.height;
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  const textColor = isLight ? '#6b7280' : '#9498ae';
+  const gridColor = isLight ? '#e0e2e8' : '#2e3144';
+  const accentGrad = ctx.createLinearGradient(0, 0, w, 0);
+  accentGrad.addColorStop(0, '#6c5ce7');
+  accentGrad.addColorStop(1, '#00cec9');
+
+  ctx.clearRect(0, 0, w, h);
+  const pad = 40;
+  const chartW = w - pad * 2;
+  const chartH = h - pad * 2;
+  const max = Math.max(...chartData) * 1.2;
+
+  // Grid
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad + (chartH / 4) * i;
+    ctx.beginPath();
+    ctx.moveTo(pad, y);
+    ctx.lineTo(w - pad, y);
+    ctx.stroke();
+    ctx.fillStyle = textColor;
+    ctx.font = `${20 * (w / 600)}px sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.round(max - (max / 4) * i), pad - 10, y + 6);
+  }
+
+  // Bars
+  const barW = chartW / chartData.length * 0.5;
+  const gap = chartW / chartData.length;
+  chartData.forEach((val, i) => {
+    const barH = (val / max) * chartH;
+    const x = pad + gap * i + (gap - barW) / 2;
+    const y = pad + chartH - barH;
+    const grad = ctx.createLinearGradient(x, y, x, y + barH);
+    grad.addColorStop(0, '#6c5ce7');
+    grad.addColorStop(1, '#00cec9');
+    ctx.fillStyle = grad;
+    const r = 6;
+    ctx.beginPath();
+    ctx.moveTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.lineTo(x + barW - r, y);
+    ctx.quadraticCurveTo(x + barW, y, x + barW, y + r);
+    ctx.lineTo(x + barW, y + barH);
+    ctx.lineTo(x, y + barH);
+    ctx.closePath();
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = textColor;
+    ctx.font = `${20 * (w / 600)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText(chartLabels[i], x + barW / 2, h - 10);
+  });
+}
+window.addEventListener('resize', drawChart);
+setTimeout(drawChart, 100);
+
+// === POMODORO ===
+let pomoTotal = 25 * 60;
+let pomoRemaining = pomoTotal;
+let pomoInterval = null;
+let pomoRunning = false;
+let focusMinutes = 0;
+
+function updatePomoDisplay() {
+  const min = Math.floor(pomoRemaining / 60);
+  const sec = pomoRemaining % 60;
+  document.getElementById('pomoTime').textContent = `${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  const circumference = 2 * Math.PI * 52;
+  const offset = circumference * (1 - pomoRemaining / pomoTotal);
+  document.getElementById('pomoRing').style.strokeDashoffset = offset;
+}
+
+function startPomodoro() {
+  if (pomoRunning) return;
+  pomoRunning = true;
+  document.getElementById('pomoStatus').textContent = 'Focusing...';
+  document.getElementById('pomoStart').textContent = 'Pause';
+  document.getElementById('pomoStart').onclick = pausePomodoro;
+  pomoInterval = setInterval(() => {
+    pomoRemaining--;
+    focusMinutes += 1/60;
+    document.getElementById('focusTime').textContent = Math.floor(focusMinutes) + 'm';
+    updatePomoDisplay();
+    if (pomoRemaining <= 0) {
+      clearInterval(pomoInterval);
+      pomoRunning = false;
+      document.getElementById('pomoStatus').textContent = 'Break time!';
+      document.getElementById('pomoStart').textContent = 'Start';
+      document.getElementById('pomoStart').onclick = startPomodoro;
+      pomoRemaining = 5 * 60;
+      pomoTotal = 5 * 60;
+    }
+  }, 1000);
+}
+
+function pausePomodoro() {
+  clearInterval(pomoInterval);
+  pomoRunning = false;
+  document.getElementById('pomoStatus').textContent = 'Paused';
+  document.getElementById('pomoStart').textContent = 'Resume';
+  document.getElementById('pomoStart').onclick = startPomodoro;
+}
+
+function resetPomodoro() {
+  clearInterval(pomoInterval);
+  pomoRunning = false;
+  pomoRemaining = 25 * 60;
+  pomoTotal = 25 * 60;
+  document.getElementById('pomoStatus').textContent = 'Ready to focus';
+  document.getElementById('pomoStart').textContent = 'Start';
+  document.getElementById('pomoStart').onclick = startPomodoro;
+  updatePomoDisplay();
+}
+updatePomoDisplay();
+
+// === TERMINAL ===
+const termInput = document.getElementById('termInput');
+termInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') {
+    const cmd = this.value.trim();
+    this.value = '';
+    executeCommand(cmd);
+  }
+});
+
+function addTermLine(text, cls = 'output') {
+  const term = document.getElementById('terminal');
+  const line = document.createElement('div');
+  line.className = 'terminal-line';
+  line.innerHTML = `<span class="prompt">guest@hermes</span>:<span style="color:#6c5ce7">~</span>$ <span class="${cls}">${text}</span>`;
+  term.appendChild(line);
+  term.scrollTop = term.scrollHeight;
+}
+
+function executeCommand(cmd) {
+  if (!cmd) return;
+  const term = document.getElementById('terminal');
+  const line = document.createElement('div');
+  line.className = 'terminal-line';
+  line.innerHTML = `<span class="prompt">guest@hermes</span>:<span style="color:#6c5ce7">~</span>$ <span style="color:#dfe6e9">${cmd}</span>`;
+  term.appendChild(line);
+
+  const commands = {
+    help: () => {
+      const cmds = ['help', 'clear', 'date', 'whoami', 'uname', 'echo', 'calc', 'fortune', 'matrix', 'status', 'neofetch'];
+      addTermLine('Available commands: ' + cmds.join(', '));
+    },
+    clear: () => { document.getElementById('terminal').innerHTML = ''; },
+    date: () => addTermLine(new Date().toString()),
+    whoami: () => addTermLine('guest'),
+    uname: () => addTermLine('HermesOS 1.0.0 x86_64'),
+    echo: (args) => addTermLine(args.join(' ') || ''),
+    calc: (args) => {
+      try {
+        const expr = args.join('').replace(/[^0-9+\-*/().%^]/g, '');
+        const result = Function('"use strict"; return (' + expr + ')')();
+        addTermLine(`${expr} = ${result}`);
+      } catch { addTermLine('Invalid expression', 'error'); }
+    },
+    fortune: () => {
+      const fortunes = [
+        'A journey of a thousand miles begins with a single step.',
+        'The best time to plant a tree was 20 years ago. The second best time is now.',
+        'Code is like humor. When you have to explain it, it is bad.',
+        'First, solve the problem. Then, write the code.',
+        'Simplicity is the soul of efficiency.',
+        'Make it work, make it right, make it fast.',
+      ];
+      addTermLine(fortunes[Math.floor(Math.random() * fortunes.length)]);
+    },
+    matrix: () => {
+      const chars = '01アイウエオカキクケコ';
+      let output = '';
+      for (let i = 0; i < 30; i++) {
+        output += chars[Math.floor(Math.random() * chars.length)];
+      }
+      addTermLine(output);
+    },
+    status: () => {
+      addTermLine('System Status:');
+      addTermLine(`  Uptime: ${Math.floor(performance.now()/1000/60)} minutes`);
+      addTermLine(`  Memory: ${Math.round(Math.random()*30+50)}% used`);
+      addTermLine(`  Tasks completed: ${document.querySelectorAll('.task-check.checked').length}`);
+      addTermLine(`  Focus time: ${Math.floor(focusMinutes)}m`);
+    },
+    neofetch: () => {
+      addTermLine('        .--.       guest@hermes');
+      addTermLine('       |o_o |      -----------');
+      addTermLine('       |:_/ |      OS: HermesOS 1.0');
+      addTermLine('      //   \\ \\     Kernel: js-6.12');
+      addTermLine('     (|     | )    Shell: hterm');
+      addTermLine('    /\'\\_   _/`\\    Resolution: ' + window.innerWidth + 'x' + window.innerHeight);
+      addTermLine('    \\___)=(___/    Theme: ' + (document.documentElement.getAttribute('data-theme') || 'dark'));
+    },
+  };
+
+  const parts = cmd.split(' ');
+  const name = parts[0].toLowerCase();
+  const args = parts.slice(1);
+
+  if (commands[name]) {
+    commands[name](args);
+  } else {
+    addTermLine(`command not found: ${name}`, 'error');
+  }
+  term.scrollTop = term.scrollHeight;
+}
+
+// === TASKS ===
+let tasks = JSON.parse(localStorage.getItem('hermes-tasks') || '[{"text":"Build dashboard","completed":true},{"text":"Test pomodoro timer","completed":false},{"text":"Write documentation","completed":false},{"text":"Deploy to production","completed":false}]');
+
+function renderTasks() {
+  const list = document.getElementById('taskList');
+  list.innerHTML = '';
+  tasks.forEach((task, i) => {
+    const li = document.createElement('li');
+    li.className = 'task-item';
+    li.innerHTML = `
+      <div class="task-check ${task.completed ? 'checked' : ''}" onclick="toggleTask(${i})"></div>
+      <span class="task-text ${task.completed ? 'completed' : ''}">${task.text}</span>
+    `;
+    list.appendChild(li);
+  });
+  document.getElementById('tasksDone').textContent = tasks.filter(t => t.completed).length;
+  localStorage.setItem('hermes-tasks', JSON.stringify(tasks));
+}
+
+function toggleTask(i) {
+  tasks[i].completed = !tasks[i].completed;
+  renderTasks();
+}
+
+function addTask() {
+  const input = document.getElementById('taskInput');
+  const text = input.value.trim();
+  if (!text) return;
+  tasks.push({ text, completed: false });
+  input.value = '';
+  renderTasks();
+}
+document.getElementById('taskInput').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') addTask();
+});
+renderTasks();
+
+// === NOTES ===
+const notesArea = document.getElementById('notesArea');
+notesArea.value = localStorage.getItem('hermes-notes') || '';
+notesArea.addEventListener('input', () => {
+  localStorage.setItem('hermes-notes', notesArea.value);
+});
+
+// === WEATHER (simulated) ===
+const weatherConditions = [
+  { icon: '☀️', desc: 'Sunny', tempRange: [24, 32] },
+  { icon: '⛅', desc: 'Partly Cloudy', tempRange: [18, 26] },
+  { icon: '☁️', desc: 'Cloudy', tempRange: [14, 22] },
+  { icon: '🌧️', desc: 'Rainy', tempRange: [10, 18] },
+  { icon: '⛈️', desc: 'Stormy', tempRange: [8, 16] },
+  { icon: '🌤️', desc: 'Mostly Sunny', tempRange: [20, 28] },
+];
+function updateWeather() {
+  const w = weatherConditions[Math.floor(Math.random() * weatherConditions.length)];
+  const temp = Math.floor(Math.random() * (w.tempRange[1] - w.tempRange[0]) + w.tempRange[0]);
+  document.getElementById('weatherIcon').textContent = w.icon;
+  document.getElementById('weatherTemp').textContent = temp + '°C';
+  document.getElementById('weatherDesc').textContent = w.desc;
+  document.getElementById('weatherHumidity').textContent = Math.floor(Math.random() * 40 + 30) + '%';
+  document.getElementById('weatherWind').textContent = Math.floor(Math.random() * 20 + 5) + ' km/h';
+  document.getElementById('weatherFeels').textContent = (temp - 2) + '°';
+}
+updateWeather();
+setInterval(updateWeather, 30000);
+
+// === SYSTEM MONITOR (simulated) ===
+function updateSystem() {
+  const cpu = Math.floor(Math.random() * 40 + 20);
+  const ram = Math.floor(Math.random() * 20 + 55);
+  const disk = Math.floor(Math.random() * 5 + 52);
+  const net = Math.floor(Math.random() * 30 + 10);
+  document.getElementById('cpuBar').style.width = cpu + '%';
+  document.getElementById('cpuPct').textContent = cpu + '%';
+  document.getElementById('ramBar').style.width = ram + '%';
+  document.getElementById('ramPct').textContent = ram + '%';
+  document.getElementById('diskBar').style.width = disk + '%';
+  document.getElementById('diskPct').textContent = disk + '%';
+  document.getElementById('netBar').style.width = net + '%';
+  document.getElementById('netPct').textContent = net + '%';
+}
+updateSystem();
+setInterval(updateSystem, 3000);
+
+// === UPTIME ===
+const startTime = Date.now();
+function updateUptime() {
+  const elapsed = Math.floor((Date.now() - startTime) / 1000 / 60);
+  const hours = Math.floor(elapsed / 60);
+  const mins = elapsed % 60;
+  document.getElementById('uptime').textContent = hours + 'h ' + mins + 'm';
+}
+setInterval(updateUptime, 60000);
+
+// === QUOTES ===
+const quotes = [
+  { text: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
+  { text: "Innovation distinguishes between a leader and a follower.", author: "Steve Jobs" },
+  { text: "Stay hungry, stay foolish.", author: "Steve Jobs" },
+  { text: "First, solve the problem. Then, write the code.", author: "John Johnson" },
+  { text: "Code is like humor. When you have to explain it, it is bad.", author: "Cory House" },
+  { text: "Simplicity is the soul of efficiency.", author: "Austin Freeman" },
+  { text: "Make it work, make it right, make it fast.", author: "Kent Beck" },
+  { text: "The best error message is the one that never shows up.", author: "Thomas Fuchs" },
+  { text: "Any fool can write code that a computer can understand. Good programmers write code that humans can understand.", author: "Martin Fowler" },
+  { text: "Programming isn't about what you know; it's about what you can figure out.", author: "Chris Pine" },
+];
+function updateQuote() {
+  const q = quotes[Math.floor(Math.random() * quotes.length)];
+  document.getElementById('quoteText').textContent = `"${q.text}"`;
+  document.getElementById('quoteAuthor').textContent = `— ${q.author}`;
+}
+updateQuote();
+setInterval(updateQuote, 20000);
+
+// === CONNECTION STATUS ===
+setInterval(() => {
+  const el = document.getElementById('connectionStatus');
+  if (Math.random() > 0.05) {
+    el.textContent = '● Live';
+    el.style.color = 'var(--success)';
+  } else {
+    el.textContent = '○ Reconnecting...';
+    el.style.color = 'var(--warning)';
+    setTimeout(() => { el.textContent = '● Live'; el.style.color = 'var(--success)'; }, 2000);
+  }
+}, 10000);
+</script>
+</body>
+</html>

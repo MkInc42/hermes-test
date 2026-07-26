@@ -88,7 +88,8 @@ def discord_post_webhook(payload):
     )
     try:
         with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
+            body = resp.read()
+            return json.loads(body) if body else {"ok": True}
     except urllib.error.HTTPError as e:
         print(f"WARN: Webhook post failed: {e.code} {e.read().decode()}", file=sys.stderr)
         return None
@@ -188,9 +189,10 @@ def main():
             print(f"  Skipping old message {msg_id} from {timestamp}")
             continue
 
-        # Skip bot's own messages and non-form messages
-        author_id = msg.get("author", {}).get("id", "")
-        if author_id == msg.get("webhook_id", ""):
+        # Skip bot's own messages (posted via the worker's result post),
+        # but NOT webhook messages from Formspree
+        if not msg.get("webhook_id") and msg.get("author", {}).get("bot"):
+            print(f"  Skipping own bot message {msg_id}")
             continue
 
         url, email = parse_request(content)

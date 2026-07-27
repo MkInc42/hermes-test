@@ -21,7 +21,7 @@ from pathlib import Path
 # ─── Config ──────────────────────────────────────────────────────────────────
 CHANNEL_ID = "1530730268875296919"
 DISCORD_API = "https://discord.com/api/v10"
-WEBHOOK_URL = "SEO_WEBHOOK_URL (see .env)"
+WEBHOOK_URL = os.environ.get("SEO_WEBHOOK_URL")
 AUDIT_DIR = os.path.expanduser("~/covered-on-seo-audit")
 STATE_FILE = os.path.expanduser("~/.hermes/cron/seo-request-worker-state.json")
 HERMES_ENV = os.path.expanduser("~/.hermes/.env")
@@ -76,6 +76,9 @@ def discord_get(url, token):
 
 def discord_post_webhook(payload):
     """POST a message to Discord via webhook URL."""
+    if not WEBHOOK_URL:
+        print("WARN: No webhook URL configured — set SEO_WEBHOOK_URL", file=sys.stderr)
+        return None
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         WEBHOOK_URL,

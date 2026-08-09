@@ -277,3 +277,60 @@ Verification:
 - 0 em dashes, 0 banned fluffy terms, noindex/nofollow present
 - Contrast fixes verified: gray-text #484848 (was #555), gray-muted #5c5c5c (was #777), teal labels at #148787 (was #1BA3A3), pagination dots 0.55 opacity (was 0.45), footer text 0.7 opacity (was 0.6)
 - Screenshots saved: tony-stucco-v9-fullpage.png, tony-stucco-v9-hero-desktop.png, tony-stucco-v9-mobile.png, tony-stucco-v9-mobile-fullpage.png
+
+### v10 (SEO Audit + Targeted Fixes)
+
+`tony-stucco-client-share-mockups-v10.html` — comprehensive SEO audit and targeted fixes. Key changes from v9:
+
+- **Robots:** `noindex, nofollow` → `index, follow` (unblocks search engine indexing)
+- **Canonical:** Added `<link rel="canonical">` for duplicate-content prevention
+- **Favicon:** Added favicon reference (uses logo PNG — no more 404)
+- **Meta description:** Stripped mockup versioning text ("v9 intro-first layout + contrast improvements") — now clean and keyword-rich at ~155 chars
+- **OG/Twitter:** Added og:url, og:site_name, og:image, og:locale, and complete Twitter Card tags (summary_large_image + title + description + image)
+- **Title:** Shortened and reordered for SEO — keywords first ("Stucco Repair & Exterior Painting — Jacksonville to Tampa | Tony Stucco Service")
+- **Structured Data:** Added LocalBusiness JSON-LD with services, phone, address, and 6-city service area
+- **Mockup note:** Removed development artifact div (was visible to visitors)
+- **Geo-targeting:** Added "Jacksonville-to-Tampa corridor — including Orlando, Ocala, Daytona Beach, and Lakeland" to hero body copy
+- **Contrast:** light-variant (section highlight text) now uses teal-dark (#148787) instead of teal (#1BA3A3) — ratio 4.09 on stucco-white passes WCAG AA large text
+
+Verification:
+- Desktop render: title, meta, structured data, canonical, favicon, OG/Twitter tags all verified in DOM
+- Mobile 390x844: layout unchanged from v9 (text-first hero stacked on carousel)
+- Console: 0 errors, 0 warnings (favicon 404 resolved)
+- Mockup note removed from page (CSS and HTML both cleaned)
+- light-variant: computed color rgb(20, 135, 135) = teal-dark #148787
+- Remaining known contrast issues (white-on-teal buttons/badges at 3.08, orange labels at 2.78) documented — not in v10 scope
+- None of the 15 internal `#` placeholder links changed (expected in mockup)
+- Fix brief: `V9_SEO_AUDIT_FIX_BRIEF.md`
+
+### v11 (WCAG Contrast Remediation)
+
+`tony-stucco-client-share-mockups-v11.html` — accessibility contrast fixes addressing the remaining minors from the v9 SEO audit fix brief. Key changes from v10:
+
+**Design tokens added:**
+- `--teal-contrast: #0F7A7A` — for elements where white text sits on teal (5.14:1, passes WCAG AA)
+- `--orange-dark: #C56000` — for orange text on light backgrounds (passes WCAG AA)
+
+**m1 — White-on-teal contrast fixed (was 3.08, now 5.14):**
+- `.service-banner`: background from `var(--teal)` to `var(--teal-contrast)`
+- `.btn-cta-teal`: background from `var(--teal)` to `var(--teal-contrast)`, hover to `#0B5E5E`
+- `.section-badge`: background from `var(--teal)` to `var(--teal-contrast)`
+
+**m2 — Orange text contrast fixed (was 2.78, now passes):**
+- `.featured-label`: color from `var(--orange)` to `var(--orange-dark)`
+- `.service-arrow`: color from `var(--orange)` to `var(--orange-dark)`
+
+**m3 — Teal text link contrast fixed (was 2.91-3.08, now 5.14):**
+- `.section-link`: color from `var(--teal)` to `var(--teal-contrast)`, hover to `#0B5E5E` with underline
+- `.service-num`: color from `var(--teal)` to `var(--teal-contrast)` (small text, now passes 4.5:1)
+
+**m6 — Footer logo alt text improved:**
+- Added descriptive keywords: "Tony Stucco Service LLC — stucco repair and exterior painting"
+
+**Preserved unchanged:** nav hover teal (temporary interaction state, not primary), focus outlines (decorative, not text), project-card border (decorative), remaining `var(--teal)` uses in non-text contexts or hover states.
+
+Verification:
+- Desktop 1280x900: rendered clean, all contrast fixes visible, zero console errors
+- Mobile 390x844: layout unchanged, stacked hero preserves text-first order
+- 0 em dashes, 0 banned fluffy terms, index/follow present
+- JSON-LD, canonical, favicon, OG/Twitter tags all intact from v10

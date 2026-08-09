@@ -49,7 +49,25 @@ Changes from v1:
 - Section 7 step 2 rewritten to prioritize photo submission
 - No em dashes, no fluffy terms, noindex/nofollow preserved
 
-### Files
+### v9 (Intro-First Hero + Contrast Improvements)
+
+`tony-stucco-client-share-mockups-v9.html` -- restructured hero layout so the intro/company/service text comes before the image carousel, plus contrast fixes. Key changes from v8:
+
+**Layout restructuring:**
+- Hero section changed from two-column side-by-side grid (text right, carousel left) to a stacked layout where the intro text comes FIRST, then the full-width Swiper carousel beneath it
+- Desktop: company label, headline, body copy, CTA, and audience labels appear above the carousel
+- Mobile: same stacked order -- text block first, carousel second (confirmed via DOM order and full-page screenshot)
+- Hero content constrained to 720px max-width for comfortable reading line length
+- Hero-photo height set to 480px (desktop), 420px (<=900px), 360px (<=500px) -- matches v8 mobile fix heights
+
+**Contrast improvements:**
+- `--gray-text`: darkened from #555555 to #484848 for stronger body copy contrast against off-white backgrounds
+- `--gray-muted`: darkened from #777777 to #5c5c5c for subdued labels
+- `.hero-company-label`, `.section-label`, `.split-label`: changed from `var(--teal)` (#1BA3A3) to `var(--teal-dark)` (#148787) -- better contrast against cream/off-white backgrounds
+- Inactive pagination dots: opacity bumped from 0.45 to 0.55 for better visibility on lighter image areas; hover state from 0.75 to 0.85
+- Footer body/link text: opacity bumped from 0.6 to 0.7 against navy background
+
+All v8 Swiper slider behavior, copy direction, Jacksonville-to-Tampa coverage language, residential exterior painting mentions, palette, and section content preserved intact.
 
 - `tony-stucco-website-mockup-report.html` — internal direction report (985 lines, ~34KB)
 - `tony-stucco-client-share-mockups.html` — client-share version v1 (~32KB)
@@ -65,6 +83,8 @@ Changes from v1:
 - `tony-stucco-v6-hero-desktop.png`, `tony-stucco-v6-mobile.png`, `tony-stucco-v6-fullpage.png` -- v6 screenshots
 - `tony-stucco-v7-hero-desktop.png`, `tony-stucco-v7-mobile.png`, `tony-stucco-v7-fullpage.png` -- v7 screenshots
 - `tony-stucco-v8-fullpage.png`, `tony-stucco-v8-hero-desktop.png`, `tony-stucco-v8-mobile.png`, `tony-stucco-v8-mobile-fullpage.png` -- v8 screenshots
+- `tony-stucco-v9-fullpage.png`, `tony-stucco-v9-hero-desktop.png`, `tony-stucco-v9-mobile.png`, `tony-stucco-v9-mobile-fullpage.png` -- v9 screenshots
+- `tony-stucco-client-share-mockups-v9.html` — intro-first v9 revision (~32KB). Hero restructured: intro text now appears before the carousel (stacked instead of side-by-side). Contrast improved: darker gray body text (#484848), darker teal labels (#148787), brighter pagination dots (0.55 opacity), stronger footer text (0.7 opacity).
 
 ### v6 (Hero Carousel CSS Hotfix)
 
@@ -246,3 +266,14 @@ Verification:
 - 1 console error (favicon.ico 404 — expected)
 - 0 em dashes, 0 banned fluffy terms, noindex/nofollow present
 - Screenshots saved: tony-stucco-v8-fullpage.png, tony-stucco-v8-hero-desktop.png, tony-stucco-v8-mobile.png, tony-stucco-v8-mobile-fullpage.png
+
+### v9 (Intro-First Hero + Contrast Improvements)
+
+Verification:
+- Desktop 1280x900 viewport: stacked hero confirmed -- intro text (company label, headline, body, CTA, audience row) appears above full-width carousel. Carousel controls and dots functional.
+- Mobile 375x812 viewport: stacked order preserved -- text block first, 5-slide Swiper carousel below with navigation dots visible. Swipe and dot interaction functional.
+- DOM order: hero-content precedes hero-photo (text before images in all viewports).
+- 1 console error (favicon.ico 404 -- expected)
+- 0 em dashes, 0 banned fluffy terms, noindex/nofollow present
+- Contrast fixes verified: gray-text #484848 (was #555), gray-muted #5c5c5c (was #777), teal labels at #148787 (was #1BA3A3), pagination dots 0.55 opacity (was 0.45), footer text 0.7 opacity (was 0.6)
+- Screenshots saved: tony-stucco-v9-fullpage.png, tony-stucco-v9-hero-desktop.png, tony-stucco-v9-mobile.png, tony-stucco-v9-mobile-fullpage.png

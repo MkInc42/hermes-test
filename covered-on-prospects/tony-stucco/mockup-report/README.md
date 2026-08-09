@@ -85,6 +85,11 @@ All v8 Swiper slider behavior, copy direction, Jacksonville-to-Tampa coverage la
 - `tony-stucco-v8-fullpage.png`, `tony-stucco-v8-hero-desktop.png`, `tony-stucco-v8-mobile.png`, `tony-stucco-v8-mobile-fullpage.png` -- v8 screenshots
 - `tony-stucco-v9-fullpage.png`, `tony-stucco-v9-hero-desktop.png`, `tony-stucco-v9-mobile.png`, `tony-stucco-v9-mobile-fullpage.png` -- v9 screenshots
 - `tony-stucco-client-share-mockups-v9.html` — intro-first v9 revision (~32KB). Hero restructured: intro text now appears before the carousel (stacked instead of side-by-side). Contrast improved: darker gray body text (#484848), darker teal labels (#148787), brighter pagination dots (0.55 opacity), stronger footer text (0.7 opacity).
+- `tony-stucco-client-share-mockups-v10.html` — SEO audit v10 (~34KB). Index/follow, canonical, favicon, clean meta, JSON-LD LocalBusiness, geo-targeting, removed development artifacts.
+- `tony-stucco-client-share-mockups-v11.html` — WCAG contrast fix v11 (~34KB). White-on-teal (#0F7A7A, 5.14:1), orange-dark (#C56000), teal-contrast links/section-nums.
+- `tony-stucco-client-share-mockups-v12.html` — optimized images v12 (~40KB). Project photos replaced with WebP (srcset) + JPEG fallback from source-assets/web-optimized/. ~80% payload reduction. All v11 layout/copy/SEO preserved.
+- `tony-stucco-v10-fullpage.png`, `tony-stucco-v10-mobile.png` — v10 screenshots
+- `tony-stucco-v11-fullpage.png`, `tony-stucco-v11-mobile.png` — v11 screenshots
 
 ### v6 (Hero Carousel CSS Hotfix)
 
@@ -334,3 +339,38 @@ Verification:
 - Mobile 390x844: layout unchanged, stacked hero preserves text-first order
 - 0 em dashes, 0 banned fluffy terms, index/follow present
 - JSON-LD, canonical, favicon, OG/Twitter tags all intact from v10
+
+### v12 (Optimized Image Derivatives — WebP srcset + JPEG fallback)
+
+`tony-stucco-client-share-mockups-v12.html` — swapped all oversized source project JPEGs for responsive WebP/JPEG derivatives. Key changes from v11:
+
+**Image optimization:**
+- All 11 project-photo `<img>` tags replaced with `<picture>` elements: WebP via `<source srcset>` + JPEG `<img srcset>` fallback
+- Hero carousel (5 slides): 4-width srcset (480w, 768w, 1280w, 1600w) with `sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px"`
+- Project proof grid (4 cards): single-width 480w WebP + JPEG — appropriate for ~300px thumbnail display
+- Featured project strip: 3-width srcset (480w, 768w, 1280w) for ~600px display area
+- Split CTA image: 3-width srcset (480w, 768w, 1280w) for ~600px display area
+- OG/Twitter meta images: updated to 1280w WebP (`project-house-side_web_w1280.webp`), og:image dimensions 1280x1707
+- Estimated payload reduction: source JPEGs ~32MB total → optimized WebP derivatives ~3.5MB total (~89% smaller on WebP-capable browsers)
+- Logo references (header, footer, favicon) preserved unchanged — not project photos
+
+**All v11 preserved:**
+- Swiper carousel behavior, loop, keyboard arrows, dot pagination
+- Stacked hero layout (intro text first, carousel below)
+- Teal-contrast (#0F7A7A) and orange-dark (#C56000) WCAG fixes
+- Jacksonville-to-Tampa coverage language, residential exterior painting copy
+- Index/follow, canonical, JSON-LD LocalBusiness, OG/Twitter tags
+- 0 em dashes, 0 banned fluffy terms
+
+**Source assets:**
+- Optimized derivatives in `source-assets/web-optimized/` — 40 files (5 projects x 4 widths x 2 formats: WebP + JPEG)
+- Manifest at `source-assets/web-optimized/manifest.json`
+
+Verification:
+- Desktop 1280x900: all sections render, hero carousel functional, images load from web-optimized
+- Mobile 390x844: responsive srcset delivers correct size, swipe functional
+- 0 stale source-assets/project-*.jpeg references (verified by regex)
+- 69 references to source-assets/web-optimized/
+- 3 logo references to source-assets/tony-stucco-logo.png preserved
+- All structural elements (service-banner, site-header, hero-section, hero-swiper, swiper-wrapper, project-grid, featured-strip, split-cta, site-footer, swiper-bundle.min.js) present
+- Swiper CDN loaded, carousel initialized, 0 JS errors

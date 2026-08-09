@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<link rel="icon" type="image/png" href="source-assets/tony-stucco-logo.png">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="canonical" href="https://tonystuccoservice.com/">
+<meta name="robots" content="index, follow">
+<meta name="description" content="Tony Stucco Service LLC: stucco repair, residential exterior painting, waterproofing, and concrete repair serving communities from Jacksonville to Tampa. Free estimates.">
+<meta property="og:title" content="Stucco Repair &amp; Exterior Painting — Jacksonville to Tampa | Tony Stucco Service">
+<meta property="og:description" content="Stucco repair, residential exterior painting, waterproofing, and concrete repair serving communities from Jacksonville to Tampa. Free estimates.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://tonystuccoservice.com/">
+<meta property="og:site_name" content="Tony Stucco Service LLC">
+<meta property="og:image" content="https://tonystuccoservice.com/source-assets/web-optimized/project-house-side_web_w1280.webp">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="1707">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Stucco Repair &amp; Exterior Painting — Jacksonville to Tampa | Tony Stucco Service">
+<meta name="twitter:description" content="Stucco repair, residential exterior painting, waterproofing, and concrete repair serving communities from Jacksonville to Tampa. Free estimates.">
+<meta name="twitter:image" content="https://tonystuccoservice.com/source-assets/web-optimized/project-house-side_web_w1280.webp">
+<title>Stucco Repair &amp; Exterior Painting — Jacksonville to Tampa | Tony Stucco Service</title>
+
+<!-- Swiper CSS from CDN -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css">
+
+<style>
+  /* ===== DESIGN TOKENS -- pulled from approved logo ===== */
+  :root {
+    --teal: #1BA3A3;
+    --teal-dark: #148787;
+    --teal-contrast: #0F7A7A;
+    --teal-ghost: rgba(27, 163, 163, 0.08);
+    --navy: #1A2B4C;
+    --navy-light: #243656;
+    --orange: #E87800;
+    --orange-dark: #C56000;
+    --orange-light: #FF9500;
+    --orange-ghost: rgba(232, 120, 0, 0.06);
+    --cream: #F5F0E8;
+    --stucco-white: #FAF8F5;
+    --white: #FFFFFF;
+    --off-white: #F9F7F2;
+    --gray-light: #F0EFEA;
+    --gray-border: #DCD8CC;
+    /*
+     * v9 contrast: gray-text darkened from #555 → #484848 and gray-muted
+     * from #777 → #5c5c5c so body copy and muted labels meet stronger
+     * contrast thresholds against off-white backgrounds.
+     */
+    --gray-text: #484848;
+    --gray-muted: #5c5c5c;
+    --ink: #1A1A1A;
+    --ink-soft: #333333;
+    --radius: 3px;
+    --max-width: 1200px;
+  }
+
+  /* ===== RESET & BASE ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 17px; -webkit-font-smoothing: antialiased; scroll-behavior: smooth; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--white);
+    line-height: 1.6;
+  }
+  img { max-width: 100%; height: auto; display: block; }
+
+  /* ===== SERVICE BANNER ===== */
+  .service-banner {
+    background: var(--teal-contrast);
+    color: var(--white);
+    text-align: center;
+    padding: 10px 24px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .service-banner .banner-phone {
+    font-weight: 700;
+    white-space: nowrap;
+    color: var(--white);
+  }
+
+  /* ===== HEADER ===== */
+  .site-header {
+    background: var(--white);
+    border-bottom: 1px solid var(--gray-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-inner {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 32px;
+    gap: 24px;
+  }
+  .logo-area {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    text-decoration: none;
+    color: inherit;
+    flex-shrink: 0;
+  }
+  .logo-img {
+    height: 50px;
+    width: auto;
+    display: block;
+  }
+  .main-nav {
+    display: flex;
+    gap: 28px;
+    list-style: none;
+  }
+  .main-nav a {
+    text-decoration: none;
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    transition: color 0.2s;
+  }
+  .main-nav a:hover { color: var(--teal); }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  .header-phone {
+    font-weight: 700;
+    font-size: 0.92rem;
+    color: var(--ink);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .btn-estimate {
+    background: var(--navy);
+    color: var(--white);
+    border: none;
+    padding: 10px 22px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+    white-space: nowrap;
+    border-radius: var(--radius);
+    transition: background 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-estimate:hover { background: var(--navy-light); }
+  .btn-estimate::after { content: "\2192"; font-size: 1rem; }
+
+  /*
+   * ===== v9 HERO SECTION -- STACKED LAYOUT =====
+   *
+   * v8 was a two-column grid (photo left, text right).
+   * v9 restructures so the intro text comes first, then the
+   * full-width image carousel below it. This gives the company
+   * identity, headline, and copy front-and-center before the
+   * visual proof scrolls into view.
+   *
+   * Layout:
+   *   .hero-content  → full-width text block (brand, headline, body, CTA)
+   *   .hero-photo    → full-width Swiper carousel beneath
+   */
+  .hero-section {
+    max-width: var(--max-width);
+    margin: 0 auto;
+  }
+
+  .hero-content {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 56px 40px 40px;
+    background: var(--off-white);
+  }
+  .hero-content-inner {
+    max-width: 720px;
+  }
+
+  .hero-photo {
+    width: 100%;
+    height: 480px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* ===== SWIPER OVERRIDES -- unchanged from v8 ===== */
+  .hero-swiper {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hero-swiper .swiper-slide img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  /* Swiper nav buttons -- match v8 styling: white circles, navy chevrons */
+  .hero-swiper .swiper-button-prev,
+  .hero-swiper .swiper-button-next {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    opacity: 0.75;
+    transition: background 0.2s, opacity 0.2s;
+    color: var(--navy);
+  }
+  .hero-swiper .swiper-button-prev:hover,
+  .hero-swiper .swiper-button-next:hover {
+    background: rgba(255, 255, 255, 0.97);
+    opacity: 1;
+  }
+  .hero-swiper .swiper-button-prev:focus-visible,
+  .hero-swiper .swiper-button-next:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+    opacity: 1;
+  }
+
+  .hero-swiper .swiper-button-prev::after,
+  .hero-swiper .swiper-button-next::after {
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
+  .hero-swiper .swiper-button-prev { left: 14px; }
+  .hero-swiper .swiper-button-next { right: 14px; }
+
+  /*
+   * v9 contrast: inactive pagination dots bumped from 0.45 opacity
+   * to 0.55 so they stay visible on lighter image areas.
+   */
+  .hero-swiper .swiper-pagination-bullet {
+    width: 8px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.55);
+    opacity: 1;
+    transition: background 0.25s, transform 0.25s;
+  }
+  .hero-swiper .swiper-pagination-bullet-active {
+    background: var(--white);
+    transform: scale(1.3);
+  }
+  .hero-swiper .swiper-pagination-bullet:hover {
+    background: rgba(255, 255, 255, 0.85);
+  }
+  .hero-swiper .swiper-pagination-bullet:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+  }
+
+  .hero-swiper .swiper-pagination {
+    bottom: 14px;
+  }
+
+  /* ===== HERO CONTENT ELEMENTS -- unchanged from v8 ===== */
+  .hero-company-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    /*
+     * v9 contrast: teal-dark (#148787) instead of teal (#1BA3A3)
+     * for stronger contrast against off-white background.
+     */
+    color: var(--teal-dark);
+    font-weight: 600;
+  }
+  .hero-headline {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 2.4rem;
+    font-weight: 700;
+    color: var(--navy);
+    line-height: 1.15;
+    letter-spacing: -0.01em;
+  }
+  .hero-body {
+    font-size: 1rem;
+    color: var(--gray-text);
+    line-height: 1.7;
+    max-width: 560px;
+  }
+  .btn-cta-teal {
+    background: var(--teal-contrast);
+    color: var(--white);
+    border: none;
+    padding: 14px 32px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+    border-radius: var(--radius);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.2s;
+    align-self: flex-start;
+  }
+  .btn-cta-teal:hover { background: #0B5E5E; }
+  .btn-cta-teal::after { content: "\2192"; font-size: 1.1rem; }
+  .audience-row {
+    display: flex;
+    gap: 24px;
+    margin-top: 4px;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gray-muted);
+    font-weight: 600;
+  }
+  .audience-row span:not(:last-child)::after {
+    content: "|";
+    margin-left: 24px;
+    color: var(--gray-border);
+  }
+
+  /* ===== SECTION LAYOUTS ===== */
+  .section-block {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 72px 32px;
+  }
+  .section-block.alt-bg {
+    background: var(--stucco-white);
+    max-width: 100%;
+  }
+  .section-block.alt-bg .section-inner {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    padding: 0;
+  }
+  .section-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .section-badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--teal-contrast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--white);
+    flex-shrink: 0;
+  }
+  .section-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    /*
+     * v9 contrast: teal-dark (#148787) for section/split labels
+     * to match hero-company-label contrast improvement.
+     */
+    color: var(--teal-dark);
+    font-weight: 600;
+    padding-top: 10px;
+  }
+  .section-headline {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--navy);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+  }
+  .section-headline .light-variant {
+    color: var(--teal-dark);
+  }
+  .section-body {
+    font-size: 1rem;
+    color: var(--gray-text);
+    line-height: 1.7;
+    max-width: 600px;
+  }
+  .section-link {
+    color: var(--teal-contrast);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: color 0.2s;
+  }
+  .section-link::after { content: "\2192"; }
+  .section-link:hover { color: #0B5E5E; text-decoration: underline; }
+
+  /* ===== TWO-COLUMN SECTION ===== */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    align-items: center;
+  }
+  .two-col .col-text {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ===== NUMBERED SERVICE LIST ===== */
+  .service-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border-top: 1px solid var(--gray-border);
+    margin-top: 8px;
+  }
+  .service-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--gray-border);
+    gap: 24px;
+  }
+  .service-num {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--teal-contrast);
+    min-width: 24px;
+  }
+  .service-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--ink-soft);
+    flex: 1;
+  }
+  .service-desc {
+    font-size: 0.88rem;
+    color: var(--gray-text);
+    flex: 2;
+    line-height: 1.5;
+  }
+  .service-arrow {
+    color: var(--orange-dark);
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  /* ===== PROJECT PROOF GRID ===== */
+  .project-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    margin-top: 32px;
+  }
+  .project-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--white);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .project-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  }
+  .project-card-image {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    overflow: hidden;
+  }
+  .project-card-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s;
+  }
+  .project-card:hover .project-card-image img {
+    transform: scale(1.04);
+  }
+  .project-card-label {
+    padding: 14px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--navy);
+    background: var(--white);
+    border-top: 3px solid var(--teal);
+  }
+
+  /* ===== SPLIT CTA SECTION ===== */
+  .split-cta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    max-width: var(--max-width);
+    margin: 0 auto;
+  }
+  .split-cta .split-image {
+    min-height: 400px;
+    overflow: hidden;
+    position: relative;
+  }
+  .split-cta .split-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    position: absolute;
+    inset: 0;
+  }
+  .split-cta .split-text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 48px 40px;
+    gap: 18px;
+    background: var(--off-white);
+  }
+  .split-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    /*
+     * v9 contrast: teal-dark for split-label, matching section-label.
+     */
+    color: var(--teal-dark);
+    font-weight: 600;
+  }
+  .split-headline {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: var(--navy);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .split-headline .light-variant {
+    color: var(--teal-dark);
+  }
+
+  /* ===== FEATURED PROJECT STRIP ===== */
+  .featured-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    align-items: center;
+    margin-top: 24px;
+  }
+  .featured-strip .featured-image {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    border-radius: var(--radius);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  }
+  .featured-strip .featured-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .featured-strip .featured-text {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .featured-strip .featured-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--orange-dark);
+    font-weight: 600;
+  }
+  .featured-strip .featured-title {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--navy);
+    line-height: 1.2;
+  }
+  .featured-strip .featured-desc {
+    font-size: 0.95rem;
+    color: var(--gray-text);
+    line-height: 1.6;
+  }
+
+  /* ===== FOOTER ===== */
+  .site-footer {
+    background: var(--navy);
+    color: rgba(255,255,255,0.85);
+    padding: 48px 32px 32px;
+  }
+  .footer-inner {
+    max-width: var(--max-width);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr 1fr;
+    gap: 40px;
+  }
+  .footer-brand .logo-area {
+    margin-bottom: 12px;
+  }
+  .footer-brand .footer-logo {
+    height: 42px;
+    width: auto;
+    filter: brightness(1.2);
+  }
+  /*
+   * v9 contrast: footer body text opacity bumped from 0.6 → 0.7
+   * for better readability against navy background.
+   */
+  .footer-brand p {
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.7);
+    margin-top: 12px;
+    line-height: 1.6;
+  }
+  .footer-col h4 {
+    color: var(--white);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 16px;
+    font-weight: 700;
+  }
+  .footer-col ul {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  /*
+   * v9 contrast: footer link opacity bumped from 0.6 → 0.7.
+   */
+  .footer-col a {
+    color: rgba(255,255,255,0.7);
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.2s;
+  }
+  .footer-col a:hover { color: var(--teal); }
+  .footer-bottom {
+    max-width: var(--max-width);
+    margin: 32px auto 0;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.12);
+    text-align: center;
+    font-size: 0.78rem;
+    color: rgba(255,255,255,0.4);
+  }
+
+  
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 900px) {
+    /*
+     * v9: hero is already stacked, so no grid fallback needed here.
+     * Keep the photo at a comfortable height for object-fit: cover.
+     */
+    .hero-photo { height: 420px; }
+    .hero-content { padding: 40px 20px 32px; }
+    .hero-headline { font-size: 1.8rem; }
+
+    .two-col { grid-template-columns: 1fr; gap: 32px; }
+    .project-grid { grid-template-columns: repeat(2, 1fr); }
+    .featured-strip { grid-template-columns: 1fr; }
+    .split-cta { grid-template-columns: 1fr; }
+    .split-cta .split-image { min-height: 250px; }
+    .footer-inner { grid-template-columns: 1fr 1fr; }
+    .main-nav { display: none; }
+    .header-inner { padding: 10px 20px; }
+    .section-block { padding: 48px 20px; }
+    .section-headline { font-size: 1.7rem; }
+    .split-headline { font-size: 1.7rem; }
+  }
+
+  @media (max-width: 500px) {
+    /*
+     * v9: hero-photo at 360px on small phones -- matches v8's fix
+     * but now the carousel is below the text block.
+     */
+    .hero-photo { height: 360px; }
+
+    /* Smaller nav buttons on tiny screens */
+    .hero-swiper .swiper-button-prev,
+    .hero-swiper .swiper-button-next {
+      width: 36px;
+      height: 36px;
+    }
+    .hero-swiper .swiper-button-prev::after,
+    .hero-swiper .swiper-button-next::after {
+      font-size: 0.85rem;
+    }
+    .hero-swiper .swiper-button-prev { left: 8px; }
+    .hero-swiper .swiper-button-next { right: 8px; }
+
+    .hero-content { padding: 32px 16px 24px; }
+    .hero-headline { font-size: 1.5rem; }
+
+    .project-grid { grid-template-columns: 1fr; }
+    .footer-inner { grid-template-columns: 1fr; }
+    .service-list li { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .service-arrow { display: none; }
+    .header-phone { font-size: 0.78rem; }
+    .btn-estimate { padding: 8px 14px; font-size: 0.7rem; }
+    .audience-row { flex-direction: column; gap: 8px; }
+    .audience-row span:not(:last-child)::after { display: none; }
+  }
+
+  /* ===== PREFERS REDUCED MOTION ===== */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+    html { scroll-behavior: auto; }
+  }
+</style>
+<!-- ===== JSON-LD Structured Data (LocalBusiness) ===== -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "LocalBusiness",
+  "@id": "https://tonystuccoservice.com/#business",
+  "name": "Tony Stucco Service LLC",
+  "description": "Stucco repair, residential exterior painting, waterproofing, and concrete repair serving communities from Jacksonville to Tampa, Florida.",
+  "telephone": "(239) 350-8845",
+  "address": {
+    "@type": "PostalAddress",
+    "addressLocality": "Orlando",
+    "addressRegion": "FL",
+    "addressCountry": "US"
+  },
+  "areaServed": [
+    {"@type": "City", "name": "Jacksonville"},
+    {"@type": "City", "name": "Orlando"},
+    {"@type": "City", "name": "Tampa"},
+    {"@type": "City", "name": "Daytona Beach"},
+    {"@type": "City", "name": "Ocala"},
+    {"@type": "City", "name": "Lakeland"}
+  ],
+  "hasOfferCatalog": {
+    "@type": "OfferCatalog",
+    "name": "Exterior Services",
+    "itemListElement": [
+      {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Stucco Repair"}},
+      {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Residential Exterior Painting"}},
+      {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Waterproofing"}},
+      {"@type": "Offer", "itemOffered": {"@type": "Service", "name": "Concrete Repair"}}
+    ]
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- ===== SERVICE BANNER ===== -->
+<div class="service-banner">
+  SERVING COMMUNITIES FROM JACKSONVILLE TO TAMPA
+  <span class="banner-phone">CALL (239) 350-8845</span>
+</div>
+
+<!-- ===== HEADER ===== -->
+<header class="site-header">
+  <div class="header-inner">
+    <a href="#" class="logo-area">
+      <img src="source-assets/tony-stucco-logo.png" alt="Tony Stucco Service LLC" class="logo-img">
+    </a>
+    <nav>
+      <ul class="main-nav">
+        <li><a href="#services">SERVICES</a></li>
+        <li><a href="#projects">PROJECTS</a></li>
+        <li><a href="#about">ABOUT</a></li>
+        <li><a href="#contact">CONTACT</a></li>
+      </ul>
+    </nav>
+    <div class="header-actions">
+      <a href="tel:+1239****8845" class="header-phone">(239) 350-8845</a>
+      <a href="#" class="btn-estimate">GET AN ESTIMATE</a>
+    </div>
+  </div>
+</header>
+
+
+
+<!--
+  ===== v9 HERO SECTION -- INTRO FIRST, CAROUSEL BELOW =====
+
+  v8 was a two-column side-by-side grid (photo left, text right).
+  v9 restructures so the company identity and service intro come
+  FIRST, then the image carousel follows below. This puts the
+  brand positioning and headline in front of the visitor before
+  they see the visual proof.
+
+  Order: company label → headline → body copy → CTA → audience
+  labels → THEN the project photo carousel.
+-->
+<section class="hero-section">
+  <div class="hero-content">
+    <div class="hero-content-inner">
+      <div class="hero-company-label">TONY STUCCO SERVICE LLC</div>
+      <h1 class="hero-headline">Stucco repair and residential exterior painting that holds up in Florida.</h1>
+      <p class="hero-body">
+        Real stucco repair, residential exterior painting, waterproofing, and concrete work for homeowners and commercial clients across the Jacksonville-to-Tampa corridor — including Orlando, Ocala, Daytona Beach, and Lakeland — from a contractor who shows up, does the job right, and stands behind it.
+      </p>
+      <a href="#" class="btn-cta-teal">REQUEST AN ESTIMATE</a>
+      <div class="audience-row">
+        <span>HOMEOWNERS</span>
+        <span>COMMERCIAL</span>
+        <span>GENERAL CONTRACTORS</span>
+      </div>
+    </div>
+  </div>
+  <div class="hero-photo">
+    <div class="swiper hero-swiper" aria-label="Project photo gallery" role="region">
+      <div class="swiper-wrapper">
+        <div class="swiper-slide">
+          <picture>
+            <source srcset="source-assets/web-optimized/project-new-build-corner_web_w480.webp 480w, source-assets/web-optimized/project-new-build-corner_web_w768.webp 768w, source-assets/web-optimized/project-new-build-corner_web_w1280.webp 1280w, source-assets/web-optimized/project-new-build-corner_web_w1600.webp 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px" type="image/webp">
+            <img src="source-assets/web-optimized/project-new-build-corner_web_w1280.jpg" srcset="source-assets/web-optimized/project-new-build-corner_web_w480.jpg 480w, source-assets/web-optimized/project-new-build-corner_web_w768.jpg 768w, source-assets/web-optimized/project-new-build-corner_web_w1280.jpg 1280w, source-assets/web-optimized/project-new-build-corner_web_w1600.jpg 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px"
+                 alt="New construction stucco finish on residential exterior" loading="eager">
+          </picture>
+        </div>
+        <div class="swiper-slide">
+          <picture>
+            <source srcset="source-assets/web-optimized/project-chimney-roof_web_w480.webp 480w, source-assets/web-optimized/project-chimney-roof_web_w768.webp 768w, source-assets/web-optimized/project-chimney-roof_web_w1280.webp 1280w, source-assets/web-optimized/project-chimney-roof_web_w1600.webp 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px" type="image/webp">
+            <img src="source-assets/web-optimized/project-chimney-roof_web_w1280.jpg" srcset="source-assets/web-optimized/project-chimney-roof_web_w480.jpg 480w, source-assets/web-optimized/project-chimney-roof_web_w768.jpg 768w, source-assets/web-optimized/project-chimney-roof_web_w1280.jpg 1280w, source-assets/web-optimized/project-chimney-roof_web_w1600.jpg 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px"
+                 alt="Chimney stucco and roof work on residential property" loading="lazy">
+          </picture>
+        </div>
+        <div class="swiper-slide">
+          <picture>
+            <source srcset="source-assets/web-optimized/project-wall-close_web_w480.webp 480w, source-assets/web-optimized/project-wall-close_web_w768.webp 768w, source-assets/web-optimized/project-wall-close_web_w1280.webp 1280w, source-assets/web-optimized/project-wall-close_web_w1600.webp 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px" type="image/webp">
+            <img src="source-assets/web-optimized/project-wall-close_web_w1280.jpg" srcset="source-assets/web-optimized/project-wall-close_web_w480.jpg 480w, source-assets/web-optimized/project-wall-close_web_w768.jpg 768w, source-assets/web-optimized/project-wall-close_web_w1280.jpg 1280w, source-assets/web-optimized/project-wall-close_web_w1600.jpg 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px"
+                 alt="Stucco wall texture and finish detail" loading="lazy">
+          </picture>
+        </div>
+        <div class="swiper-slide">
+          <picture>
+            <source srcset="source-assets/web-optimized/project-house-side_web_w480.webp 480w, source-assets/web-optimized/project-house-side_web_w768.webp 768w, source-assets/web-optimized/project-house-side_web_w1280.webp 1280w, source-assets/web-optimized/project-house-side_web_w1600.webp 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px" type="image/webp">
+            <img src="source-assets/web-optimized/project-house-side_web_w1280.jpg" srcset="source-assets/web-optimized/project-house-side_web_w480.jpg 480w, source-assets/web-optimized/project-house-side_web_w768.jpg 768w, source-assets/web-optimized/project-house-side_web_w1280.jpg 1280w, source-assets/web-optimized/project-house-side_web_w1600.jpg 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px"
+                 alt="Residential exterior stucco on house side elevation" loading="lazy">
+          </picture>
+        </div>
+        <div class="swiper-slide">
+          <picture>
+            <source srcset="source-assets/web-optimized/project-long-wall_web_w480.webp 480w, source-assets/web-optimized/project-long-wall_web_w768.webp 768w, source-assets/web-optimized/project-long-wall_web_w1280.webp 1280w, source-assets/web-optimized/project-long-wall_web_w1600.webp 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px" type="image/webp">
+            <img src="source-assets/web-optimized/project-long-wall_web_w1280.jpg" srcset="source-assets/web-optimized/project-long-wall_web_w480.jpg 480w, source-assets/web-optimized/project-long-wall_web_w768.jpg 768w, source-assets/web-optimized/project-long-wall_web_w1280.jpg 1280w, source-assets/web-optimized/project-long-wall_web_w1600.jpg 1600w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 1200px"
+                 alt="Long stucco wall showing consistent finish quality" loading="lazy">
+          </picture>
+        </div>
+      </div>
+
+      <!-- Navigation arrows -->
+      <div class="swiper-button-prev"></div>
+      <div class="swiper-button-next"></div>
+
+      <!-- Pagination dots -->
+      <div class="swiper-pagination"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 01: YOUR EXTERIOR. HANDLED RIGHT. ===== -->
+<section class="section-block" id="services">
+  <div class="two-col">
+    <div class="col-text">
+      <div class="section-header">
+        <div class="section-badge">01</div>
+        <div class="section-label">FLORIDA STUCCO SERVICE</div>
+      </div>
+      <h2 class="section-headline">Your exterior. Handled right.</h2>
+    </div>
+    <div class="col-text">
+      <p class="section-body">
+        Whether you are a homeowner looking for residential exterior painting and stucco repair, a property manager with exterior damage across multiple units, or a general contractor who needs a reliable finishing partner, we handle the full exterior scope. From damaged stucco to a full exterior refresh including exterior painting for homes, Tony Stucco Service LLC brings focused repairs, straight answers, and work that holds up to Florida conditions.
+      </p>
+      <a href="#" class="section-link">TALK TO TONY ABOUT YOUR PROJECT</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 02: MORE THAN A SURFACE FIX ===== -->
+<section class="section-block alt-bg" id="about">
+  <div class="section-inner">
+    <div class="section-header">
+      <div class="section-badge">02</div>
+      <div class="section-label">HOW WE CAN HELP</div>
+    </div>
+    <h2 class="section-headline">More than a surface fix.</h2>
+    <ul class="service-list">
+      <li>
+        <span class="service-num">01</span>
+        <span class="service-title">Stucco repair</span>
+        <span class="service-desc">Focused exterior repairs for cracks, damaged sections, and worn stucco surfaces</span>
+        <span class="service-arrow">&rarr;</span>
+      </li>
+      <li>
+        <span class="service-num">02</span>
+        <span class="service-title">Exterior painting</span>
+        <span class="service-desc">Residential exterior painting with professional-grade paint, surface prep, and finish work</span>
+        <span class="service-arrow">&rarr;</span>
+      </li>
+      <li>
+        <span class="service-num">03</span>
+        <span class="service-title">Waterproofing</span>
+        <span class="service-desc">Seal and protect against Florida humidity and rainfall with proper barrier systems</span>
+        <span class="service-arrow">&rarr;</span>
+      </li>
+      <li>
+        <span class="service-num">04</span>
+        <span class="service-title">Concrete repair</span>
+        <span class="service-desc">Crack repair, resurfacing, and structural patching for driveways, walkways, and slabs</span>
+        <span class="service-arrow">&rarr;</span>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===== SECTION 03: REAL PROJECTS ===== -->
+<section class="section-block" id="projects">
+  <div class="section-header">
+    <div class="section-badge">03</div>
+    <div class="section-label">PROOF OF WORK</div>
+  </div>
+  <h2 class="section-headline">Real projects. <span class="light-variant">Real results.</span></h2>
+  <p class="section-body">
+    These are actual completed projects from across central Florida. Every photo represents real stucco work, not stock images or catalog shots.
+  </p>
+
+  <div class="project-grid">
+    <div class="project-card">
+      <div class="project-card-image">
+        <picture>
+          <source srcset="source-assets/web-optimized/project-chimney-roof_web_w480.webp" type="image/webp">
+          <img src="source-assets/web-optimized/project-chimney-roof_web_w480.jpg"
+               alt="Chimney stucco and roof work on residential property" loading="lazy">
+        </picture>
+      </div>
+      <div class="project-card-label">Chimney stucco work</div>
+    </div>
+    <div class="project-card">
+      <div class="project-card-image">
+        <picture>
+          <source srcset="source-assets/web-optimized/project-wall-close_web_w480.webp" type="image/webp">
+          <img src="source-assets/web-optimized/project-wall-close_web_w480.jpg"
+               alt="Stucco wall texture and finish detail" loading="lazy">
+        </picture>
+      </div>
+      <div class="project-card-label">Exterior wall finish</div>
+    </div>
+    <div class="project-card">
+      <div class="project-card-image">
+        <picture>
+          <source srcset="source-assets/web-optimized/project-house-side_web_w480.webp" type="image/webp">
+          <img src="source-assets/web-optimized/project-house-side_web_w480.jpg"
+               alt="Residential exterior stucco on house side elevation" loading="lazy">
+        </picture>
+      </div>
+      <div class="project-card-label">Residential exterior stucco</div>
+    </div>
+    <div class="project-card">
+      <div class="project-card-image">
+        <picture>
+          <source srcset="source-assets/web-optimized/project-long-wall_web_w480.webp" type="image/webp">
+          <img src="source-assets/web-optimized/project-long-wall_web_w480.jpg"
+               alt="Long stucco wall showing consistent finish quality" loading="lazy">
+        </picture>
+      </div>
+      <div class="project-card-label">Clean wall finish</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SECTION 04: WHAT TO WATCH FOR ===== -->
+<section class="section-block alt-bg">
+  <div class="section-inner">
+    <div class="section-header">
+      <div class="section-badge">04</div>
+      <div class="section-label">STUCCO DAMAGE WARNING SIGNS</div>
+    </div>
+    <h2 class="section-headline">Not sure what you are <span class="light-variant">seeing?</span></h2>
+    <p class="section-body" style="margin-bottom: 0;">
+      These are a few common signs that it may be time to talk through the condition of your exterior.
+    </p>
+
+    <div class="featured-strip">
+      <div class="featured-image">
+        <picture>
+          <source srcset="source-assets/web-optimized/project-chimney-roof_web_w480.webp 480w, source-assets/web-optimized/project-chimney-roof_web_w768.webp 768w, source-assets/web-optimized/project-chimney-roof_web_w1280.webp 1280w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 600px" type="image/webp">
+          <img src="source-assets/web-optimized/project-chimney-roof_web_w768.jpg" srcset="source-assets/web-optimized/project-chimney-roof_web_w480.jpg 480w, source-assets/web-optimized/project-chimney-roof_web_w768.jpg 768w, source-assets/web-optimized/project-chimney-roof_web_w1280.jpg 1280w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 600px"
+               alt="Chimney stucco repair detail showing professional workmanship" loading="lazy">
+        </picture>
+      </div>
+      <div class="featured-text">
+        <div class="featured-label">FEATURED PROJECT</div>
+        <h3 class="featured-title">Chimney and roof stucco work</h3>
+        <p class="featured-desc">
+          Stucco damage often starts in hard-to-see places like chimneys, rooflines, and corners. This project shows how professional stucco repair restores a clean, watertight surface in exposed areas where Florida weather hits hardest.
+        </p>
+        <a href="#" class="section-link">SEE MORE PROJECTS</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SPLIT CTA SECTION ===== -->
+<section class="section-block alt-bg" style="padding: 0;" id="contact">
+  <div class="split-cta">
+    <div class="split-image">
+      <picture>
+        <source srcset="source-assets/web-optimized/project-house-side_web_w480.webp 480w, source-assets/web-optimized/project-house-side_web_w768.webp 768w, source-assets/web-optimized/project-house-side_web_w1280.webp 1280w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 600px" type="image/webp">
+        <img src="source-assets/web-optimized/project-house-side_web_w768.jpg" srcset="source-assets/web-optimized/project-house-side_web_w480.jpg 480w, source-assets/web-optimized/project-house-side_web_w768.jpg 768w, source-assets/web-optimized/project-house-side_web_w1280.jpg 1280w" sizes="(max-width: 500px) 100vw, (max-width: 900px) 100vw, 600px"
+             alt="Residential exterior stucco project in central Florida" loading="lazy">
+      </picture>
+    </div>
+    <div class="split-text">
+      <div class="split-label">READY TO MAKE A CHANGE?</div>
+      <h2 class="split-headline">Let us take a look at your <span class="light-variant">exterior.</span></h2>
+      <p class="section-body">
+        Share a few project details and Tony can follow up about the work you need. No pressure. Just a straight conversation about your exterior and what it needs.
+      </p>
+      <a href="#" class="btn-cta-teal">REQUEST AN ESTIMATE</a>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FOOTER ===== -->
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <div class="logo-area">
+        <img src="source-assets/tony-stucco-logo.png" alt="Tony Stucco Service LLC — stucco repair and exterior painting" class="footer-logo">
+      </div>
+      <p>
+        Stucco repair, residential exterior painting, waterproofing, and concrete repair serving communities from Jacksonville to Tampa.
+      </p>
+    </div>
+    <div class="footer-col">
+      <h4>Services</h4>
+      <ul>
+        <li><a href="#">Stucco Repair</a></li>
+        <li><a href="#">Exterior Painting</a></li>
+        <li><a href="#">Waterproofing</a></li>
+        <li><a href="#">Concrete Repair</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Company</h4>
+      <ul>
+        <li><a href="#">About</a></li>
+        <li><a href="#">Projects</a></li>
+        <li><a href="#">Contact</a></li>
+        <li><a href="#">Service Area</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>Contact</h4>
+      <ul>
+        <li><a href="tel:+1239****8845">(239) 350-8845</a></li>
+        <li><a href="#">Orlando, FL</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer-bottom">
+    Tony Stucco Service LLC. Serving communities from Jacksonville to Tampa.
+  </div>
+</footer>
+
+<!-- Swiper JS from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
+<script>
+/*
+ * Tony Stucco v12 — Optimized Image Derivatives (WebP srcset + JPEG fallback)
+ *
+ * Swaps ~32MB of source JPEGs for WebP/JPEG derivatives (~80% smaller payload). Responsive <picture> elements with srcset for all project photos. Swiper carousel unchanged.
+ * text (hero-content) in the stacked hero layout. Swiper sits inside
+ * .hero-photo which has an explicit height — absolute inset fills it.
+ *
+ * Dependencies: Swiper CSS + JS from CDN (loaded in <head> and before </body>).
+ */
+(function() {
+  var swiperEl = document.querySelector('.hero-swiper');
+  if (!swiperEl) return;
+
+  new Swiper(swiperEl, {
+    slidesPerView: 1,
+    loop: true,
+    speed: 450,
+
+    /* Navigation arrows */
+    navigation: {
+      nextEl: '.swiper-button-next',
+      prevEl: '.swiper-button-prev',
+    },
+
+    /* Dot pagination */
+    pagination: {
+      el: '.swiper-pagination',
+      clickable: true,
+    },
+
+    /* Keyboard arrows */
+    keyboard: {
+      enabled: true,
+      onlyInViewport: true,
+    },
+
+    /* Accessibility labels */
+    a11y: {
+      prevSlideMessage: 'Previous slide',
+      nextSlideMessage: 'Next slide',
+      firstSlideMessage: 'This is the first slide',
+      lastSlideMessage: 'This is the last slide',
+      paginationBulletMessage: 'Go to slide {{index}}',
+    },
+
+    /* Lazy load images as they enter viewport */
+    preloadImages: false,
+    lazy: {
+      loadPrevNext: true,
+    },
+
+    /* Prevent CLS -- wrapper already sized by CSS */
+    autoHeight: false,
+  });
+})();
+</script>
+
+</body>
+</html>

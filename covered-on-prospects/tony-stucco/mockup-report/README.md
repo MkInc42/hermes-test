@@ -374,3 +374,43 @@ Verification:
 - 3 logo references to source-assets/tony-stucco-logo.png preserved
 - All structural elements (service-banner, site-header, hero-section, hero-swiper, swiper-wrapper, project-grid, featured-strip, split-cta, site-footer, swiper-bundle.min.js) present
 - Swiper CDN loaded, carousel initialized, 0 JS errors
+
+### v13 (Carousel Wrap Fix)
+
+`tony-stucco-client-share-mockups-v13.html` — fixed the hero carousel so arrow-click navigation wraps correctly from last slide back to first, and from first back to last. Key changes from v12:
+
+**Root cause:**
+Swiper 11's `loop: true` on the jsdelivr CDN build uses DOM reordering (not clones) and has a direction-based logic bug that blocks the initial wrap — `slideNext()` stalls at `isEnd=true` and never wraps back to slide 1. The `loop: true` parameter was present in v12 code but the loop mechanism never created functional clone slides.
+
+**Fix:**
+- Disabled Swiper's built-in `loop: true` (set to `false`)
+- Replaced Swiper's built-in navigation config with custom click handlers on the arrow buttons
+- Custom handlers check the current slide index before advancing:
+  - Next at last slide (index 4) → `slideTo(0, 250)` wraps to first
+  - Prev at first slide (index 0) → `slideTo(LAST_INDEX, 250)` wraps to last
+- Removed inert `lazy` config (slides use native `loading=lazy`, not Swiper's lazy API)
+- Removed `preloadImages: false` (defaults to true now for proper slide sizing)
+
+**Why not use reachEnd/reachBeginning events:**
+- Swiper's built-in navigation disables buttons at boundaries when `loop=false`
+- Events cause infinite recursion (`emit→slideTo→emit`) when handlers call `slideTo`
+
+**All v12 preserved:**
+- Swiper carousel behavior, touch/swipe, dot pagination, keyboard arrows
+- Stacked hero layout (intro text first, carousel below)
+- `<picture>` elements with WebP srcset + JPEG fallback (all 11 references)
+- Teal-contrast (#0F7A7A) and orange-dark (#C56000) WCAG fixes
+- Jacksonville-to-Tampa coverage language, residential exterior painting copy
+- Index/follow, canonical, JSON-LD LocalBusiness, OG/Twitter tags
+- 0 em dashes, 0 banned fluffy terms
+
+Verification:
+- Desktop 1280x900: all sections render, hero carousel functional with working arrow wrap
+- Mobile 390x844: responsive layout preserved, swipe functional
+- Forward wrap: next-clicking from slide 4 (last) → wraps to slide 0 (first), cycle continues through 5+ clicks
+- Backward wrap: prev-clicking from slide 0 (first) → wraps to slide 4 (last), cycle continues through 5+ clicks
+- 3 pre-existing console errors from Swiper CDN (harmless internal noise, same as v12)
+- 0 em dashes, 0 banned fluffy terms, index/follow present
+- Screenshots saved: tony-stucco-v13-desktop.png, tony-stucco-v13-mobile.png
+- `tony-stucco-v13-desktop.png`, `tony-stucco-v13-mobile.png` -- v13 screenshots
+- `tony-stucco-client-share-mockups-v13.html` — carousel wrap fix v13 (~40KB). Fixed hero carousel so next-click from last slide wraps to first and prev-click from first wraps to last. Root cause: Swiper 11 loop=true on jsdelivr CDN has a direction-based logic bug that prevents DOM-reorder loop from creating functional wrap. Fix: disabled loop=true, replaced Swiper nav config with custom click handlers that check index before slideTo. All v12 image optimization, SEO, and contrast fixes preserved.

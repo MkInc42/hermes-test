@@ -130,9 +130,9 @@ def package_json_text(package_data: dict[str, Any]) -> str:
 def configure_package_json(package_data: dict[str, Any]) -> bool:
     """Ensure build scripts and exact Tailwind package pins are present.
 
-    Existing package sections and unrelated fields are preserved. Build-only
-    packages stay in the section where an existing project already declares
-    them; a new project receives a devDependencies section.
+    Existing package sections and unrelated fields are preserved. The official
+    Tailwind packages are always canonicalized into devDependencies so npm and
+    subsequent helper runs see exactly one declaration for each package.
 
     Args:
         package_data: Mutable package metadata.
@@ -169,19 +169,16 @@ def configure_package_json(package_data: dict[str, Any]) -> bool:
         changed = True
 
     for package_name in TAILWIND_PACKAGES:
-        containing_sections = [
-            section for section, values in dependency_sections.items() if package_name in values
-        ]
-        section_name = containing_sections[0] if containing_sections else "devDependencies"
-        dependencies = dependency_sections[section_name]
-        if dependencies.get(package_name) != TAILWIND_VERSION:
-            dependencies[package_name] = TAILWIND_VERSION
+        # Keep both official packages in one canonical section. npm may merge
+        # overlapping dependency sections in surprising ways, so remove stale
+        # declarations before the next install can rewrite package-lock.json.
+        if default_section.get(package_name) != TAILWIND_VERSION:
+            default_section[package_name] = TAILWIND_VERSION
             changed = True
-        # A duplicated declaration is ambiguous for maintainers and npm, so
-        # retain the first existing section and remove later duplicates only.
-        for duplicate_section in containing_sections[1:]:
-            if package_name in dependency_sections[duplicate_section]:
-                del dependency_sections[duplicate_section][package_name]
+        for section_name in ("dependencies", "optionalDependencies"):
+            dependencies = dependency_sections.get(section_name)
+            if dependencies is not None and package_name in dependencies:
+                del dependencies[package_name]
                 changed = True
 
     return changed

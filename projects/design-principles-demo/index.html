@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apex — AI-powered business intelligence, automated.</title>
+  <meta name="description" content="Apex ingests your data, surfaces what matters, and delivers board-ready intelligence without the analyst headcount.">
+  <meta property="og:title" content="Apex — Your business intelligence, automated.">
+  <meta property="og:description" content="Ingest your data, surface what matters, and deliver board-ready intelligence without the analyst headcount.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://apex.ai">
+  <meta property="og:image" content="https://apex.ai/og.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Font: DM Sans for headings only -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"DM Sans"', 'system-ui', 'sans-serif'],
+            body: ['system-ui', '-apple-system', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50:  '#eef2ff',
+              100: '#e0e7ff',
+              200: '#c7d2fe',
+              300: '#a5b4fc',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+              800: '#3730a3',
+              900: '#312e81',
+              950: '#1e1b4b',
+            },
+            accent: {
+              50:  '#fffbeb',
+              100: '#fef3c7',
+              200: '#fde68a',
+              300: '#fcd34d',
+              400: '#fbbf24',
+              500: '#f59e0b',
+              600: '#d97706',
+              700: '#b45309',
+              800: '#92400e',
+              900: '#78350f',
+            },
+          },
+        },
+      },
+    }
+  </script>
+
+  <style>
+    /* --- Core spacing variables (divisible-by-4, px ÷ 16 = rem) --- */
+    :root {
+      --space-xs: 0.25rem;    /*  4px */
+      --space-sm: 0.5rem;     /*  8px */
+      --space-md: 1rem;       /* 16px */
+      --space-lg: 1.5rem;     /* 24px */
+      --space-xl: 2rem;       /* 32px */
+      --space-2xl: 2.5rem;    /* 40px */
+      --space-3xl: 3rem;      /* 48px */
+      --space-4xl: 4rem;      /* 64px */
+      --space-5xl: 5rem;      /* 80px */
+      --space-6xl: 6rem;      /* 96px */
+    }
+
+    /* --- Base typography --- */
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      color: #1c1917;  /* stone-900 */
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      font-family: '"DM Sans"', system-ui, sans-serif;
+      font-weight: 600;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    /* H1 — largest, in hero. Only one per page. */
+    h1 {
+      font-size: clamp(2.25rem, 5vw, 3.75rem);
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    /* H2 — section headings */
+    h2 {
+      font-size: clamp(1.5rem, 3vw, 2.25rem);
+      line-height: 1.2;
+    }
+
+    /* H3 — card / feature titles */
+    h3 {
+      font-size: 1.25rem;
+      line-height: 1.3;
+    }
+
+    /* Body text — never center-aligned when more than a few words */
+    p, li {
+      font-size: 1rem;
+      line-height: 1.65;
+      max-width: 65ch;
+    }
+
+    p + p {
+      margin-top: var(--space-lg);
+    }
+
+    /* Small / secondary text */
+    .text-sm {
+      font-size: 0.875rem;
+      line-height: 1.5;
+    }
+
+    /* --- Buttons (rectangular, not pill) --- */
+    .btn-primary {
+      display: inline-block;
+      padding: 0.75rem 1.75rem;
+      font-family: '"DM Sans"', system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      border-radius: 0.375rem;  /* gentle radius — NOT pill */
+      background-color: #f59e0b;  /* accent-500 — exclusive CTA color */
+      color: #1c1917;            /* stone-900 for max contrast on amber */
+      transition: background-color 0.15s ease;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary:hover {
+      background-color: #d97706;  /* accent-600 */
+    }
+
+    .btn-primary:focus-visible {
+      outline: 2px solid #1c1917;
+      outline-offset: 2px;
+    }
+
+    .btn-outline {
+      display: inline-block;
+      padding: 0.75rem 1.75rem;
+      font-family: '"DM Sans"', system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      border-radius: 0.375rem;
+      border: 1.5px solid #d6d3d1;  /* stone-300 */
+      color: #44403c;               /* stone-700 */
+      background: transparent;
+      transition: border-color 0.15s ease, color 0.15s ease;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .btn-outline:hover {
+      border-color: #78716c;  /* stone-500 */
+      color: #1c1917;        /* stone-900 */
+    }
+
+    .btn-outline:focus-visible {
+      outline: 2px solid #1c1917;
+      outline-offset: 2px;
+    }
+
+    /* --- Layout containers --- */
+    .container-narrow {
+      max-width: 72rem;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+    }
+
+    .section {
+      padding: var(--space-5xl) 0;
+    }
+
+    /* --- Feature cards (Gestalt similarity: same shape, same spacing) --- */
+    .feature-card {
+      padding: var(--space-xl);
+      border-radius: 0.5rem;
+      border: 1px solid #e7e5e4;  /* stone-200 */
+      background: #ffffff;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .feature-card:hover {
+      border-color: #d6d3d1;  /* stone-300 */
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    /* --- Pricing card tiers --- */
+    .pricing-card {
+      padding: var(--space-2xl);
+      border-radius: 0.5rem;
+      border: 1px solid #e7e5e4;
+      background: #ffffff;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .pricing-card:hover {
+      border-color: #d6d3d1;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+
+    .pricing-card.featured {
+      border-color: #4f46e5;  /* brand-600 */
+      border-width: 2px;
+      position: relative;
+    }
+
+    .pricing-card.featured:hover {
+      border-color: #6366f1;  /* brand-500 */
+      box-shadow: 0 1px 3px rgba(79,70,229,0.08);
+    }
+
+    /* --- Social proof logos (CSS placeholders) --- */
+    .client-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 2rem;
+      padding: 0 0.75rem;
+      font-family: '"DM Sans"', system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 0.875rem;
+      color: #78716c;
+      letter-spacing: 0.02em;
+      border: 1px solid transparent;
+    }
+
+    /* --- Image placeholders (palette-matched) --- */
+    .img-placeholder {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      border-radius: 0.5rem;
+      object-fit: cover;
+      display: block;
+    }
+
+    /* --- Testimonial block --- */
+    .testimonial {
+      padding: var(--space-xl);
+      border-left: 3px solid #4f46e5;  /* brand-600 */
+      background: #fafaf9;  /* stone-50 */
+      border-radius: 0 0.5rem 0.5rem 0;
+    }
+
+    /* --- Footer --- */
+    .site-footer {
+      padding: var(--space-3xl) 0;
+      border-top: 1px solid #e7e5e4;
+      font-size: 0.875rem;
+      color: #78716c;
+    }
+
+    /* --- Respect reduced motion --- */
+    @media (prefers-reduced-motion: reduce) {
+      .btn-primary,
+      .btn-outline,
+      .feature-card,
+      .pricing-card {
+        transition: none;
+      }
+    }
+
+    /* --- Responsive extras --- */
+    @media (max-width: 640px) {
+      .section {
+        padding: var(--space-3xl) 0;
+      }
+      .pricing-card.featured {
+        border-width: 1.5px;
+      }
+    }
+
+    /* Extra tighten at 375px */
+    @media (max-width: 400px) {
+      .container-narrow {
+        padding: 0 1rem;
+      }
+      .feature-card,
+      .pricing-card {
+        padding: var(--space-lg);
+      }
+      .section {
+        padding: var(--space-2xl) 0;
+      }
+      .pricing-card.featured .absolute {
+        font-size: 0.625rem;
+        padding: 0.125rem 0.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ================================================================
+       SKIP LINK (Principle 13: Technical — keyboard navigation)
+  ================================================================ -->
+  <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-white focus:border focus:border-stone-300 focus:text-stone-900 focus:rounded">
+    Skip to main content
+  </a>
+
+  <!-- ================================================================
+       HEADER
+  ================================================================ -->
+  <header class="container-narrow py-6 flex items-center justify-between gap-4 flex-wrap" role="banner">
+    <a href="/" class="font-display text-xl font-bold tracking-tight text-stone-900 no-underline hover:text-brand-600 focus-visible:text-brand-600 transition-colors rounded-sm" aria-label="Apex home">
+      Apex
+    </a>
+    <nav aria-label="Main navigation">
+      <ul class="flex flex-wrap items-center gap-4 sm:gap-8 list-none m-0 p-0">
+        <li><a href="#features" class="text-sm font-medium text-stone-600 no-underline hover:text-stone-900 focus-visible:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Features</a></li>
+        <li><a href="#pricing" class="text-sm font-medium text-stone-600 no-underline hover:text-stone-900 focus-visible:text-stone-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Pricing</a></li>
+        <li><a href="#cta" class="btn-primary text-sm !py-2 !px-4">Get started</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- ================================================================
+       HERO (Principle 1: Hero = mini-site)
+       (Principle 2: Start from function — the core pitch + CTA comes first)
+       (Principle 10: Contrast — CTA is highest contrast element)
+       (Principle 11: Social proof — logos placed near hero)
+  ================================================================ -->
+  <main id="main-content">
+    <section class="section pt-4 pb-0" aria-labelledby="hero-heading">
+      <div class="container-narrow max-w-4xl mx-auto text-center">
+
+        <!-- Eyebrow (Principle 1) -->
+        <p class="font-display text-sm font-semibold uppercase tracking-widest text-brand-600 mb-4">
+          All data, no noise.
+        </p>
+
+        <!-- Headline (Principle 1) -->
+        <h1 id="hero-heading" class="mb-4 text-stone-900">
+          Your business intelligence,<br>
+          <span class="text-brand-600">automated.</span>
+        </h1>
+
+        <!-- Sub-text: who it's for / what it does (Principle 1) -->
+        <p class="text-lg text-stone-500 mx-auto mb-8 max-w-2xl" style="font-size: 1.125rem; line-height: 1.6;">
+          Apex ingests your data, surfaces what matters, and delivers board-ready intelligence — without the analyst headcount.
+        </p>
+
+        <!-- CTA + secondary action (Principle 10: CTA is highest contrast) -->
+        <div class="flex flex-wrap gap-4 justify-center mb-12">
+          <a href="#pricing" class="btn-primary font-display">See pricing</a>
+          <a href="#features" class="btn-outline font-display">Explore features</a>
+        </div>
+
+        <!-- Social proof: client logos (Principle 1 + Principle 11) -->
+        <div class="mb-6">
+          <p class="text-sm text-stone-400 mb-4 font-medium uppercase tracking-wider">
+            Trusted by engineering teams at
+          </p>
+          <div class="flex flex-wrap items-center justify-center gap-x-8 gap-y-2">
+            <span class="client-logo" aria-label="NexusCorp logo">NexusCorp</span>
+            <span class="client-logo" aria-label="DataFlow logo">DataFlow</span>
+            <span class="client-logo" aria-label="MetricAI logo">MetricAI</span>
+            <span class="client-logo" aria-label="VaultEdge logo">VaultEdge</span>
+          </div>
+        </div>
+
+        <!-- Palette-matched placeholder image (Principle 9: Images) -->
+        <div class="max-w-4xl mx-auto mt-8 rounded-lg overflow-hidden border border-stone-200 shadow-sm">
+          <!-- Indigo-toned gradient placeholder — no glassmorphism, no fade-in -->
+          <div class="img-placeholder" style="background: linear-gradient(135deg, #312e81 0%, #4f46e5 40%, #6366f1 70%, #a5b4fc 100%);" role="img" aria-label="Apex dashboard interface showing data visualizations and AI-generated insights in the brand's indigo color palette."></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================================================
+         PHILOSOPHY NOTE (Principle 14: Creative process)
+    ================================================================ -->
+    <section class="section py-8" aria-label="Design philosophy">
+      <div class="container-narrow max-w-3xl mx-auto">
+        <blockquote class="text-center">
+          <p class="text-base text-stone-400 italic" style="max-width: none;">
+            "We iterated through twelve interface directions before arriving at this one. Then we cut everything that didn't serve a purpose. What remains is what you need."
+          </p>
+          <footer class="text-sm text-stone-300 mt-2">— The Apex design team</footer>
+        </blockquote>
+      </div>
+    </section>
+
+    <!-- ================================================================
+         FEATURES (Principles 2, 3, 4, 5, 6, 7, 8, 9)
+         Principle 2: Start from function — features explain what Apex does
+         Principle 3: Less design — clean cards, no decoration
+         Principle 4: Visual hierarchy — H2 section heading, H3 card titles
+         Principle 5: 60/30/10 — neutrals dominate, brand (indigo) in borders/highlights
+         Principle 6: Gestalt — same card shape/size = same kind of thing
+         Principle 7: Spacing — generous gaps between cards
+         Principle 8: Typography — DM Sans for headings, system-ui for body
+         Principle 9: Images — palette-matched placeholders with alt text
+    ================================================================ -->
+    <section id="features" class="section" aria-labelledby="features-heading">
+      <div class="container-narrow">
+
+        <!-- Section heading (H2 — Principle 4: Visual hierarchy) -->
+        <h2 id="features-heading" class="text-center mb-3 text-stone-900">
+          From raw data to board-ready insight
+        </h2>
+        <p class="text-center text-stone-500 mx-auto mb-16 max-w-xl">
+          Three capabilities that replace a whole analytics team.
+        </p>
+
+        <!-- Feature cards — same shape, generous spacing (Principles 3, 6, 7) -->
+        <div class="grid md:grid-cols-3 gap-8">
+
+          <!-- Feature 1 -->
+          <article class="feature-card">
+            <!-- Palette-matched image (Principle 9) -->
+            <div class="img-placeholder mb-6" style="background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 40%, #a5b4fc 80%, #818cf8 100%);" role="img" aria-label="Apex data ingestion interface: pipelines connecting multiple data sources in the brand's indigo color palette."></div>
+            <h3 class="mb-2 text-stone-900">Ingest everything</h3>
+            <p class="text-stone-500 text-base" style="font-size: 0.9375rem;">
+              Connect your CRM, ERP, data warehouse, and spreadsheets in one pass. Apex normalizes schemas on the fly.
+            </p>
+          </article>
+
+          <!-- Feature 2 -->
+          <article class="feature-card">
+            <div class="img-placeholder mb-6" style="background: linear-gradient(135deg, #e0e7ff 0%, #a5b4fc 50%, #6366f1 100%);" role="img" aria-label="Apex AI analysis dashboard showing anomaly detection and trend identification in the brand's indigo color palette."></div>
+            <h3 class="mb-2 text-stone-900">Surface what matters</h3>
+            <p class="text-stone-500 text-base" style="font-size: 0.9375rem;">
+              AI scans every dimension and flags anomalies, shifts, and opportunities — before your next stand-up.
+            </p>
+          </article>
+
+          <!-- Feature 3 -->
+          <article class="feature-card">
+            <div class="img-placeholder mb-6" style="background: linear-gradient(135deg, #818cf8 0%, #6366f1 40%, #4f46e5 80%, #3730a3 100%);" role="img" aria-label="Apex report builder showing a formatted board-ready executive summary in the brand's indigo color palette."></div>
+            <h3 class="mb-2 text-stone-900">Deliver instantly</h3>
+            <p class="text-stone-500 text-base" style="font-size: 0.9375rem;">
+              One click produces a board-ready brief. No PowerPoint, no late nights, no friction.
+            </p>
+          </article>
+
+        </div>
+
+        <!-- De-emphasized secondary detail (Principle 4) -->
+        <p class="text-center text-sm text-stone-300 mt-12">
+          No consultants. No multi-month implementation. No per-seat markup.
+        </p>
+      </div>
+    </section>
+
+    <!-- ================================================================
+         PRICING + TESTIMONIAL (Principles 10, 11, 12)
+         Principle 10: Contrast — CTA button on pricing cards pops
+         Principle 11: Social proof — testimonial placed next to pricing
+         Principle 12: UX — clear button text, action-oriented
+    ================================================================ -->
+    <section id="pricing" class="section bg-stone-50" aria-labelledby="pricing-heading">
+      <div class="container-narrow">
+
+        <h2 id="pricing-heading" class="text-center mb-3 text-stone-900">
+          Simple pricing, no surprises
+        </h2>
+        <p class="text-center text-stone-500 mx-auto mb-16 max-w-xl">
+          One product. Three tiers based on data volume.
+        </p>
+
+        <div class="grid lg:grid-cols-3 gap-8 items-start">
+
+          <!-- Tier 1: Starter -->
+          <div class="pricing-card">
+            <h3 class="text-stone-900 mb-1">Starter</h3>
+            <p class="text-sm text-stone-400 mb-6">Up to 3 data sources</p>
+            <p class="text-3xl font-display font-bold text-stone-900 mb-1">
+              $99<span class="text-base font-normal text-stone-400">/mo</span>
+            </p>
+            <p class="text-sm text-stone-400 mb-8">Billed monthly. Cancel anytime.</p>
+            <ul class="list-none m-0 p-0 mb-8 space-y-3">
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                3 data source connections
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Weekly insight digests
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Email & Slack alerts
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-500">
+                <span class="text-stone-300 shrink-0" aria-hidden="true">&#8722;</span>
+                Priority support
+              </li>
+            </ul>
+            <a href="#" class="btn-outline w-full text-center font-display">Get started</a>
+          </div>
+
+          <!-- Tier 2: Growth (featured) -->
+          <div class="pricing-card featured">
+            <!-- Featured badge — subtle, uses brand color -->
+            <span class="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 text-xs font-semibold uppercase tracking-wider bg-brand-600 text-white rounded" style="font-family: 'DM Sans', system-ui, sans-serif;">
+              Most popular
+            </span>
+            <h3 class="text-stone-900 mb-1">Growth</h3>
+            <p class="text-sm text-stone-400 mb-6">Up to 10 data sources</p>
+            <p class="text-3xl font-display font-bold text-stone-900 mb-1">
+              $249<span class="text-base font-normal text-stone-400">/mo</span>
+            </p>
+            <p class="text-sm text-stone-400 mb-8">Billed monthly. Cancel anytime.</p>
+            <ul class="list-none m-0 p-0 mb-8 space-y-3">
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                10 data source connections
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Daily insight digests
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Multi-channel alerts
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Priority support
+              </li>
+            </ul>
+            <a href="#" class="btn-primary w-full text-center font-display">Get started</a>
+          </div>
+
+          <!-- Tier 3: Enterprise -->
+          <div class="pricing-card">
+            <h3 class="text-stone-900 mb-1">Enterprise</h3>
+            <p class="text-sm text-stone-400 mb-6">Unlimited sources</p>
+            <p class="text-3xl font-display font-bold text-stone-900 mb-1">
+              $499<span class="text-base font-normal text-stone-400">/mo</span>
+            </p>
+            <p class="text-sm text-stone-400 mb-8">Custom terms available.</p>
+            <ul class="list-none m-0 p-0 mb-8 space-y-3">
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Unlimited connections
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Real-time dashboards
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Custom integrations
+              </li>
+              <li class="flex items-start gap-2 text-sm text-stone-600">
+                <span class="text-brand-600 shrink-0" aria-hidden="true">&#10003;</span>
+                Dedicated account team
+              </li>
+            </ul>
+            <a href="#" class="btn-outline w-full text-center font-display">Contact sales</a>
+          </div>
+
+        </div>
+
+        <!-- Testimonial placed right next to pricing (Principle 11) -->
+        <div class="max-w-2xl mx-auto mt-16">
+          <div class="testimonial">
+            <p class="text-stone-700 text-base mb-3 leading-relaxed" style="font-size: 0.9375rem; max-width: none;">
+              "We replaced a three-person analytics team with Apex. Our board gets better briefs, we ship decisions faster, and we saved over $180k in year one."
+            </p>
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-brand-200 flex items-center justify-center text-brand-800 font-display font-bold text-sm" aria-hidden="true">CR</div>
+              <div>
+                <p class="text-sm font-semibold text-stone-900 m-0">Claire Rennard</p>
+                <p class="text-xs text-stone-400 m-0">VP Data, NexusCorp</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- UX principle: de-emphasize secondary info (Principle 12) -->
+        <p class="text-center text-sm text-stone-300 mt-8">
+          All tiers include a 14-day free trial. No credit card required.
+        </p>
+      </div>
+    </section>
+
+    <!-- ================================================================
+         CTA FOOTER (Principle 10: Contrast)
+    ================================================================ -->
+    <section id="cta" class="section" aria-labelledby="cta-heading">
+      <div class="container-narrow max-w-3xl mx-auto text-center">
+        <h2 id="cta-heading" class="mb-4 text-stone-900">
+          Ready to stop drowning in data?
+        </h2>
+        <p class="text-stone-500 mx-auto mb-8 max-w-lg">
+          Join the engineering teams that replaced their analytics overhead with one dashboard.
+        </p>
+        <div class="flex flex-wrap gap-4 justify-center">
+          <a href="#" class="btn-primary font-display text-base sm:text-lg !px-6 sm:!px-8 !py-3 sm:!py-3">
+            Start your free trial
+          </a>
+          <a href="#" class="btn-outline font-display text-base sm:text-lg !px-6 sm:!px-8 !py-3 sm:!py-3">
+            Talk to sales
+          </a>
+        </div>
+        <!-- Social proof again — review scores (Principle 11) -->
+        <p class="text-sm text-stone-400 mt-6">
+          Rated 4.8/5 on G2 from 200+ reviews
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================================================================
+       FOOTER (Principle 13: Technical — semantic HTML, links)
+  ================================================================ -->
+  <footer class="site-footer" role="contentinfo">
+    <div class="container-narrow">
+      <div class="grid sm:grid-cols-3 gap-8 mb-8">
+        <div>
+          <a href="/" class="font-display text-base font-bold text-stone-900 no-underline">Apex</a>
+          <p class="text-sm text-stone-400 mt-2 max-w-xs">
+            AI-powered business intelligence. Ingest, surface, deliver.
+          </p>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-stone-700 mb-3">Product</p>
+          <ul class="list-none m-0 p-0 space-y-2">
+            <li><a href="#features" class="text-sm text-stone-500 no-underline hover:text-stone-800 focus-visible:text-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Features</a></li>
+            <li><a href="#pricing" class="text-sm text-stone-500 no-underline hover:text-stone-800 focus-visible:text-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Pricing</a></li>
+            <li><a href="#" class="text-sm text-stone-500 no-underline hover:text-stone-800 focus-visible:text-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Changelog</a></li>
+          </ul>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-stone-700 mb-3">Company</p>
+          <ul class="list-none m-0 p-0 space-y-2">
+            <li><a href="#" class="text-sm text-stone-500 no-underline hover:text-stone-800 focus-visible:text-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">About</a></li>
+            <li><a href="#" class="text-sm text-stone-500 no-underline hover:text-stone-800 focus-visible:text-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Blog</a></li>
+            <li><a href="#" class="text-sm text-stone-500 no-underline hover:text-stone-800 focus-visible:text-stone-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Contact</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center justify-between gap-4 pt-6 border-t border-stone-200">
+        <p class="text-xs text-stone-400 m-0">&copy; 2026 Apex Technologies. All rights reserved.</p>
+        <div class="flex gap-4">
+          <a href="#" class="text-xs text-stone-400 no-underline hover:text-stone-600 focus-visible:text-stone-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Privacy</a>
+          <a href="#" class="text-xs text-stone-400 no-underline hover:text-stone-600 focus-visible:text-stone-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Terms</a>
+          <a href="#" class="text-xs text-stone-400 no-underline hover:text-stone-600 focus-visible:text-stone-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 transition-colors rounded-sm">Security</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ================================================================
+       JSON-LD STRUCTURED DATA (Principle 13: Technical)
+  ================================================================ -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Apex",
+    "applicationCategory": "Business Intelligence",
+    "operatingSystem": "Web",
+    "description": "AI-powered business intelligence that ingests your data, surfaces what matters, and delivers board-ready intelligence.",
+    "offers": [
+      {
+        "@type": "Offer",
+        "name": "Starter",
+        "price": "99.00",
+        "priceCurrency": "USD"
+      },
+      {
+        "@type": "Offer",
+        "name": "Growth",
+        "price": "249.00",
+        "priceCurrency": "USD"
+      },
+      {
+        "@type": "Offer",
+        "name": "Enterprise",
+        "price": "499.00",
+        "priceCurrency": "USD"
+      }
+    ]
+  }
+  </script>
+
+</body>
+</html>

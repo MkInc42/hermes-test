@@ -1,0 +1,49 @@
+# Git, local environments, and agent state
+.git/
+.gitignore
+.hermes/
+.kanban-watchdog.json
+venv/
+.venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Generated audit data and runtime files
+audits/
+crawls/
+logs/
+*.log
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+
+# Browser, test, and design artifacts
+.cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+test-results/
+playwright-report/
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.screenshot.*
+
+# Keep only the reviewed crawl profile from local Screaming Frog state.
+.ScreamingFrogSEOSpider/*
+!.ScreamingFrogSEOSpider/free-audit.seospiderconfig
+
+# The proprietary Screaming Frog .deb is intentionally NOT ignored.
+# Supply it at build time, do not commit it.

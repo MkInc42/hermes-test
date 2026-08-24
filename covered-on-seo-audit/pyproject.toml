@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "covered-on-seo-audit"
+version = "0.1.0"
+description = "Covered On SEO audit pipeline"
+authors = ["Covered On"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.14"
+# YAML config parsing is required by the crawler and pipeline configuration.
+pyyaml = ">=6.0,<7.0"
+# Jinja2 renders the generated client and internal audit reports.
+jinja2 = ">=3.1,<4.0"
+# Requests and aiohttp provide synchronous and asynchronous HTTP clients used by analysis tools.
+requests = ">=2.31,<3.0"
+aiohttp = ">=3.9,<4.0"
+# BeautifulSoup and lxml parse crawled HTML and XML efficiently.
+beautifulsoup4 = ">=4.12,<5.0"
+lxml = ">=5.1,<7.0"
+# Playwright drives the bundled Chromium crawler.
+playwright = ">=1.40,<2.0"
+# dnspython performs DNS checks in the security scanner.
+dnspython = ">=2.6,<3.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

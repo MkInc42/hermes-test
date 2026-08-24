@@ -1,0 +1,41 @@
+name: covered-on-seo-audit
+
+services:
+  seo-audit:
+    build:
+      context: .
+      args:
+        # The proprietary installer is supplied locally and is never committed.
+        SCREAMING_FROG_DEB: ${SCREAMING_FROG_DEB:-screamingfrogseospider.deb}
+    image: covered-on/seo-audit:local
+    user: "10001:10001"
+    environment:
+      HOME: /home/auditor
+      XDG_CONFIG_HOME: /home/auditor/.config
+      PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
+      AUDIT_OUTPUT_DIR: /data/audits
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=1g
+      - /home/auditor/.cache:rw,nosuid,nodev,size=512m
+    volumes:
+      - audit-data:/data/audits
+      - screaming-frog-home:/home/auditor/.ScreamingFrogSEOSpider
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "/app/healthcheck.py"]
+      interval: 30s
+      timeout: 10s
+      start_period: 45s
+      retries: 3
+
+volumes:
+  audit-data:
+    name: covered-on-seo-audit-data
+  screaming-frog-home:
+    name: covered-on-screaming-frog-home

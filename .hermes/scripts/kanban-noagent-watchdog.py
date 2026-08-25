@@ -28,6 +28,12 @@ def load_cwd_config() -> dict:
 
 
 CONFIG = load_cwd_config()
+# Operational default destination (per BRIEF.md): every board watchdog posts
+# its blocked and all-done reports to this shared Discord channel unless an
+# explicit env/config override is set. The override exists ONLY for backwards
+# compatibility with boards that had their own channel configured — boards no
+# longer need per-board channel configuration to deliver reports.
+DEFAULT_DISCORD_CHANNEL_ID = "1541801982707114004"
 BOARD = str(os.environ.get("KANBAN_BOARD") or CONFIG.get("board", "")).strip()
 JOB_ID = str(os.environ.get("KANBAN_CRON_JOB_ID") or CONFIG.get("job_id", "")).strip()
 STATE_FILE = str(
@@ -36,7 +42,19 @@ STATE_FILE = str(
     or os.path.expanduser(f"~/.hermes/cron/{BOARD or 'kanban'}-watchdog-state.json")
 )
 DISCORD_WEBHOOK_URL = str(os.environ.get("DISCORD_WEBHOOK_URL") or CONFIG.get("discord_webhook_url", "")).strip()
-DISCORD_THREAD_ID = str(os.environ.get("DISCORD_THREAD_ID") or CONFIG.get("discord_thread_id", "")).strip()
+# Discord destination: explicit override (env or per-board config) wins; the
+# shared default channel is used otherwise, so no board needs its own channel
+# configured for reports to be delivered.
+DISCORD_THREAD_ID = str(
+    os.environ.get("DISCORD_THREAD_ID")
+    or CONFIG.get("discord_thread_id")
+    or DEFAULT_DISCORD_CHANNEL_ID
+).strip()
+ACTIVE_TASK_IDS = {
+    str(task_id).strip()
+    for task_id in CONFIG.get("active_task_ids", [])
+    if str(task_id).strip()
+}
 USE_DISCORD_WEBHOOK = (
     str(os.environ.get("KANBAN_USE_DISCORD_WEBHOOK") or CONFIG.get("use_discord_webhook", ""))
     .strip()
@@ -211,6 +229,15 @@ def remove_self() -> None:
     )
 
 
+def board_id_line() -> str:
+    """Return the standardized board-identification line for every report.
+
+    Required so Reknown can immediately tell which Kanban board a Discord
+    report refers to without leaving the channel.
+    """
+    return f"Board ID: {BOARD}"
+
+
 def emit(lines: list[str]) -> None:
     message = "\n".join(lines).strip()
     if not message:
@@ -218,7 +245,57 @@ def emit(lines: list[str]) -> None:
     if USE_DISCORD_WEBHOOK and DISCORD_WEBHOOK_URL and DISCORD_THREAD_ID:
         post_to_discord_webhook(message)
         return
+    # Try Discord bot token API as primary delivery (more reliable than cron stdout)
+    if DISCORD_THREAD_ID and post_to_discord_api(message):
+        return
+    # Fallback: print to stdout (cron system delivers this)
     print(message)
+
+
+def load_discord_bot_token() -> str | None:
+    """Read DISCORD_BOT_TOKEN from ~/.hermes/.env"""
+    env_path = os.path.expanduser("~/.hermes/.env")
+    if not os.path.exists(env_path):
+        return None
+    try:
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("DISCORD_BOT_TOKEN="):
+                    val = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    return val
+    except Exception:
+        return None
+    return None
+
+
+def post_to_discord_api(message: str) -> bool:
+    """Post a message to the configured Discord thread via the bot REST API.
+
+    Uses the Discord bot token from ~/.hermes/.env. Returns True on success,
+    False on any failure (so the caller can fall back to print/stdout).
+    """
+    token = load_discord_bot_token()
+    if not token or not DISCORD_THREAD_ID:
+        return False
+    url = f"https://discord.com/api/v10/channels/{DISCORD_THREAD_ID}/messages"
+    payload = {"content": message}
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=data,
+        headers={
+            "Authorization": f"Bot {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "Hermes-Kanban-Watchdog/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return 200 <= resp.status < 300
+    except Exception:
+        return False
 
 
 def post_to_discord_webhook(message: str) -> None:
@@ -243,41 +320,53 @@ def post_to_discord_webhook(message: str) -> None:
         raise RuntimeError(f"discord webhook post failed: {e}") from e
 
 
-state = load_state()
-ls_output = run(["hermes", "kanban", "ls"])
-tasks = parse_ls(ls_output)
-state["last_snapshot"] = {t["id"]: t["status"] for t in tasks}
+def main() -> None:
+    """Watchdog tick: snapshot the board and report blocked/all-done states.
 
-if not tasks:
+    Report policy (deterministic, no-agent):
+    - Blocked tasks are reported once per unique (id, status, title) signature.
+    - All-done is reported exactly once per board lifetime.
+    - Ordinary running/todo/ready states are silent — only state is refreshed.
+    """
+    state = load_state()
+    ls_output = run(["hermes", "kanban", "ls"])
+    tasks = parse_ls(ls_output)
+    if ACTIVE_TASK_IDS:
+        tasks = [task for task in tasks if task["id"] in ACTIVE_TASK_IDS]
+    state["last_snapshot"] = {t["id"]: t["status"] for t in tasks}
+
+    if not tasks:
+        save_state(state)
+        sys.exit(0)
+
+    blocked = [t for t in tasks if t["status"] == "blocked"]
+    if blocked:
+        lines = []
+        for t in blocked:
+            sig = f"{t['id']}:{t['status']}:{t['title']}"
+            if state["reported_blocked_signatures"].get(t["id"]) == sig:
+                continue
+            state["reported_blocked_signatures"][t["id"]] = sig
+            lines.append(f"BLOCKED {t['id']} ({t['assignee']}): {t['title']}")
+        save_state(state)
+        if lines:
+            emit([f"Kanban board '{BOARD}' has blocked work:", *lines, board_id_line()])
+        sys.exit(0)
+
+    all_done = all(t["status"] == "done" for t in tasks)
+    if all_done and not state.get("reported_all_done"):
+        done = len(tasks)
+        emit([f"Kanban board '{BOARD}' complete: {done} done, 0 blocked.", board_id_line()])
+        remove_self()
+        state["reported_all_done"] = True
+        state["removed_after_done"] = True
+        save_state(state)
+        sys.exit(0)
+
+    # Ordinary in-progress state: silent tick, refresh state only.
     save_state(state)
     sys.exit(0)
 
-blocked = [t for t in tasks if t["status"] == "blocked"]
-if blocked:
-    lines = []
-    for t in blocked:
-        sig = f"{t['id']}:{t['status']}:{t['title']}"
-        if state["reported_blocked_signatures"].get(t["id"]) == sig:
-            continue
-        state["reported_blocked_signatures"][t["id"]] = sig
-        lines.append(f"BLOCKED {t['id']} ({t['assignee']}): {t['title']}")
-    save_state(state)
-    if lines:
-        emit([f"Kanban board '{BOARD}' has blocked work:", *lines])
-    sys.exit(0)
 
-all_done = all(t["status"] == "done" for t in tasks)
-if all_done and not state.get("reported_all_done"):
-    state["reported_all_done"] = True
-    save_state(state)
-    emit([
-        f"Kanban board '{BOARD}' is complete.",
-        f"All {len(tasks)} task(s) are done.",
-    ])
-    remove_self()
-    state["removed_after_done"] = True
-    save_state(state)
-    sys.exit(0)
-
-save_state(state)
-sys.exit(0)
+if __name__ == "__main__":
+    main()

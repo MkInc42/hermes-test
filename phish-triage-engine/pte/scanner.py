@@ -332,17 +332,27 @@ class DockerRunner:
         return command[0], name
 
     def _docker_cleanup(self, docker: str, name: str, action: str,
-                        *arguments: str) -> None:
+                        *arguments: str) -> str | None:
+        command = [docker, action, *arguments, name]
         try:
-            self._cleanup_run(
-                [docker, action, *arguments, name], stdout=subprocess.PIPE,
+            completed = self._cleanup_run(
+                command, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, check=False,
                 timeout=_DOCKER_CLEANUP_TIMEOUT_SECONDS,
             )
-        except (subprocess.TimeoutExpired, OSError):
-            # Cleanup is best-effort across daemon/CLI failures; the timeout is
-            # still reported and every cleanup stage is attempted.
-            pass
+        except subprocess.TimeoutExpired:
+            return f"docker {action} timed out"
+        except OSError as exc:
+            return f"docker {action} could not run: {exc}"
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace")[-1000:]
+            return f"docker {action} exited {completed.returncode}: {detail}"
+        return None
+
+    @staticmethod
+    def _raise_cleanup_failure(failures: Sequence[str]) -> None:
+        if failures:
+            raise ScanExecutionError("scanner worker cleanup failed: " + "; ".join(failures))
 
     def run(self, command: Sequence[str], *, timeout_seconds: float,
             kill_grace_seconds: float) -> None:
@@ -356,20 +366,34 @@ class DockerRunner:
         try:
             _stdout, stderr = process.communicate(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
+            cleanup_failures: list[str] = []
             grace = str(max(0, int(kill_grace_seconds)))
-            self._docker_cleanup(docker, container_name, "stop", "--time", grace)
+            failure = self._docker_cleanup(docker, container_name, "stop", "--time", grace)
+            if failure is not None:
+                cleanup_failures.append(failure)
             try:
                 process.communicate(timeout=kill_grace_seconds)
             except subprocess.TimeoutExpired:
-                self._docker_cleanup(docker, container_name, "kill")
+                failure = self._docker_cleanup(docker, container_name, "kill")
+                if failure is not None:
+                    cleanup_failures.append(failure)
                 try:
                     process.communicate(timeout=1)
                 except subprocess.TimeoutExpired:
                     process.kill()  # reap a wedged CLI after container cleanup
                     process.communicate()
             finally:
-                self._docker_cleanup(docker, container_name, "rm", "--force")
-            raise ScanExecutionError("scanner worker timed out and was stopped") from exc
+                failure = self._docker_cleanup(docker, container_name, "rm", "--force")
+                if failure is not None:
+                    cleanup_failures.append(failure)
+            if cleanup_failures:
+                try:
+                    self._raise_cleanup_failure(cleanup_failures)
+                except ScanExecutionError as cleanup_exc:
+                    raise cleanup_exc from exc
+            raise ScanExecutionError("scanner worker timed out") from exc
+        cleanup_failure = self._docker_cleanup(docker, container_name, "rm", "--force")
+        self._raise_cleanup_failure([cleanup_failure] if cleanup_failure is not None else [])
         if process.returncode != 0:
             detail = stderr.decode("utf-8", errors="replace")[-1000:]
             raise ScanExecutionError(f"scanner worker exited {process.returncode}: {detail}")

@@ -185,11 +185,26 @@ class _GracefulAfterStopProcess(_HungProcess):
         return b"", b""
 
 
+class _ExitedProcess:
+    def __init__(self, returncode=0, stderr=b""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+    def communicate(self, timeout=None):
+        return b"", self.stderr
+
+
+def _successful_cleanup(command, **_kwargs):
+    return subprocess.CompletedProcess(command, 0, b"", b"")
+
+
 def test_timeout_stops_named_container_gracefully_then_removes():
     process = _GracefulAfterStopProcess()
     cleanup = []
     runner = DockerRunner(lambda *_args, **_kwargs: process,
-                          lambda command, **_kwargs: cleanup.append(command))
+                          lambda command, **_kwargs: (
+                              cleanup.append(command) or _successful_cleanup(command)
+                          ))
     with pytest.raises(ScanExecutionError, match="timed out"):
         runner.run(["docker", "run", "--name", "pte-scan-job1", "image"],
                    timeout_seconds=0.01, kill_grace_seconds=2)
@@ -203,7 +218,9 @@ def test_timeout_forces_named_container_kill_then_removes():
     process = _HungProcess()
     cleanup = []
     runner = DockerRunner(lambda *_args, **_kwargs: process,
-                          lambda command, **_kwargs: cleanup.append(command))
+                          lambda command, **_kwargs: (
+                              cleanup.append(command) or _successful_cleanup(command)
+                          ))
     with pytest.raises(ScanExecutionError, match="timed out"):
         runner.run(["docker", "run", "--name", "pte-scan-job2", "image"],
                    timeout_seconds=0.01, kill_grace_seconds=0.01)
@@ -224,14 +241,66 @@ def test_cleanup_calls_are_bounded_and_failures_do_not_skip_later_stages():
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
         if command[1] == "kill":
             raise OSError("docker unavailable")
+        return _successful_cleanup(command)
 
     runner = DockerRunner(lambda *_args, **_kwargs: process, failing_cleanup)
-    with pytest.raises(ScanExecutionError, match="timed out"):
+    with pytest.raises(ScanExecutionError, match="cleanup failed"):
         runner.run(["docker", "run", "--name", "pte-scan-job3", "image"],
                    timeout_seconds=0.01, kill_grace_seconds=0.01)
 
     assert [call[0][1] for call in cleanup] == ["stop", "kill", "rm"]
     assert all(call[1]["timeout"] == 5.0 for call in cleanup)
+
+
+def test_successful_worker_is_removed_before_success_is_reported():
+    cleanup = []
+
+    def cleanup_run(command, **_kwargs):
+        cleanup.append(command)
+        return _successful_cleanup(command)
+
+    DockerRunner(lambda *_args, **_kwargs: _ExitedProcess(), cleanup_run).run(
+        ["docker", "run", "--name", "pte-scan-success", "image"],
+        timeout_seconds=1, kill_grace_seconds=0,
+    )
+    assert cleanup == [["docker", "rm", "--force", "pte-scan-success"]]
+
+
+def test_nonzero_worker_is_removed_before_worker_failure_is_reported():
+    cleanup = []
+
+    def cleanup_run(command, **_kwargs):
+        cleanup.append(command)
+        return _successful_cleanup(command)
+
+    runner = DockerRunner(
+        lambda *_args, **_kwargs: _ExitedProcess(7, b"worker failed"), cleanup_run
+    )
+    with pytest.raises(ScanExecutionError, match="worker exited 7: worker failed"):
+        runner.run(["docker", "run", "--name", "pte-scan-failed", "image"],
+                   timeout_seconds=1, kill_grace_seconds=0)
+    assert cleanup == [["docker", "rm", "--force", "pte-scan-failed"]]
+
+
+@pytest.mark.parametrize("cleanup_result", [
+    subprocess.CompletedProcess(["docker", "rm"], 1, b"", b"still running"),
+    OSError("docker unavailable"),
+])
+def test_cleanup_failure_overrides_successful_or_nonzero_worker(cleanup_result):
+    def cleanup_run(command, **_kwargs):
+        if isinstance(cleanup_result, BaseException):
+            raise cleanup_result
+        return cleanup_result
+
+    for returncode in (0, 7):
+        runner = DockerRunner(
+            lambda *_args, **_kwargs: _ExitedProcess(returncode, b"worker failed"),
+            cleanup_run,
+        )
+        with pytest.raises(ScanExecutionError, match="cleanup failed") as raised:
+            runner.run(["docker", "run", "--name", f"pte-scan-{returncode}", "image"],
+                       timeout_seconds=1, kill_grace_seconds=0)
+        assert "removed" not in str(raised.value)
 
 
 def test_runner_requires_named_container_contract():

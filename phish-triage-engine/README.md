@@ -56,12 +56,20 @@ contract. Workers use a fresh disposable profile. Downloads are blocked by
 default; the only alternative is quarantine metadata/hash-only, with download
 bytes never retained or submitted.
 
-Live execution is fail-closed. `ScannerConfig(route_mode=PIA_SIDECAR)` is
-required before a Docker command can be built. The command uses one `--rm`
-container per job, a read-only root, a single writable per-job `/output` bind,
-an explicit non-root UID/GID, an isolated no-exec `/tmp`, all capabilities
-dropped, and `no-new-privileges`. It joins the VPN container namespace with Docker
-`--network container:pia-vpn`. In Compose, the exact expected equivalent is:
+Live execution is fail-closed and command construction is currently disabled.
+Preflight DNS validation alone cannot prevent rebinding when the browser later
+resolves an attacker-controlled hostname inside an unrestricted shared network
+namespace. Live commands will remain disabled until the runtime contract pins
+validated public addresses and independently blocks private egress.
+
+The future design retains `ScannerConfig(route_mode=PIA_SIDECAR)` and the VPN
+container namespace. Its per-job output directory must be mode `0700` and owned
+by the configured worker UID/GID, defaulting to the container identity
+`65532:65532`; invalid identity values fail validation. The eventual Docker
+command must also use a unique explicit container name. Timeout cleanup acts on
+that name with `docker stop`, escalates to `docker kill`, and always issues
+`docker rm --force`, rather than merely terminating the Docker CLI process. In
+Compose, the intended PIA namespace equivalent remains:
 
 ```yaml
 services:
@@ -71,9 +79,8 @@ services:
 
 `pia-vpn` is an external future sidecar/service name, not a bundled VPN setup.
 No PIA usernames, passwords, keys, or credential placeholders are stored here.
-URL policy resolves every DNS answer before a live invocation and rejects
+URL policy resolves every DNS answer during validation and rejects
 loopback, private/LAN, link-local, multicast, reserved, unspecified, CGNAT,
 and cloud-metadata addresses. Only HTTP(S) and default ports 80/443 are allowed
-unless a non-default port is explicitly configured. The runtime network layer
-must independently block private egress to mitigate DNS rebinding after the
-pre-fetch validation.
+unless a non-default port is explicitly configured. No validated hostname is
+currently passed to a live container.

@@ -88,6 +88,8 @@ class ScannerConfig:
     allowed_non_default_ports: frozenset[int] = frozenset()
     download_policy: DownloadPolicy = DownloadPolicy.BLOCK
     docker_binary: str = "docker"
+    worker_uid: int = 65532
+    worker_gid: int = 65532
 
     def __post_init__(self) -> None:
         if self.timeout_seconds <= 0 or self.kill_grace_seconds < 0:
@@ -96,6 +98,9 @@ class ScannerConfig:
             raise ScanPolicyError("container image and PIA service are required")
         if any(port < 1 or port > 65535 for port in self.allowed_non_default_ports):
             raise ScanPolicyError("allowlisted ports must be within 1..65535")
+        for label, value in (("worker_uid", self.worker_uid), ("worker_gid", self.worker_gid)):
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 < value < 2**31:
+                raise ScanPolicyError(f"{label} must be an integer within 1..2147483647")
 
 
 @dataclass(frozen=True)
@@ -140,6 +145,7 @@ _SAFE_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _BLOCKED_HOSTNAMES = frozenset({
     "instance-data", "localhost", "metadata", "metadata.google.internal",
 })
+_DOCKER_CLEANUP_TIMEOUT_SECONDS = 5.0
 
 
 def _address_is_blocked(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -217,8 +223,17 @@ def validate_url(target: str, *, allowed_non_default_ports: frozenset[int] = fro
                            tuple(sorted(str(address) for address in addresses)))
 
 
-def create_job_output_dir(root: Path, job_id: str | uuid.UUID) -> Path:
-    """Create a contained mode-0700 directory for a UUID or safe job name."""
+def create_job_output_dir(root: Path, job_id: str | uuid.UUID, *,
+                          worker_uid: int | None = None,
+                          worker_gid: int | None = None) -> Path:
+    """Create a contained mode-0700 directory owned by the worker identity."""
+    if (worker_uid is None) != (worker_gid is None):
+        raise ScanPolicyError("worker_uid and worker_gid must be configured together")
+    if worker_uid is None:
+        worker_uid, worker_gid = os.geteuid(), os.getegid()
+    for label, value in (("worker_uid", worker_uid), ("worker_gid", worker_gid)):
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 2**31:
+            raise ScanPolicyError(f"{label} must be an integer within 0..2147483647")
     job_name = str(job_id)
     if not isinstance(job_id, (str, uuid.UUID)) or not _SAFE_JOB_ID.fullmatch(job_name):
         raise ScanPolicyError("job_id must be one conservative path component")
@@ -239,6 +254,17 @@ def create_job_output_dir(root: Path, job_id: str | uuid.UUID) -> Path:
     resolved_output = output.resolve(strict=True)
     if not resolved_output.is_relative_to(resolved_root):
         raise ScanPolicyError("job output directory escaped its root")
+    try:
+        os.chown(resolved_output, worker_uid, worker_gid)
+        os.chmod(resolved_output, 0o700)
+    except OSError:
+        # Do not return a directory that the configured container identity may
+        # be unable to use, or weaken permissions as a workaround.
+        try:
+            resolved_output.rmdir()
+        except OSError:
+            pass
+        raise
     return resolved_output
 
 
@@ -263,34 +289,65 @@ def handle_download(content: bytes | None = None, *,
 
 def build_container_command(config: ScannerConfig, target: ValidatedTarget,
                             output_dir: Path) -> list[str]:
-    """Build a hardened, single-use Docker worker invocation."""
+    """Refuse live construction until address-pinned egress exists.
+
+    PIA namespace sharing remains the intended route, but it is not itself an
+    egress security boundary: navigating the original hostname would permit a
+    second DNS answer to rebind the browser to a private address.
+    """
     if config.route_mode is not RouteMode.PIA_SIDECAR:
         raise ScanPolicyError("live container jobs require route_mode=pia-sidecar")
     if not output_dir.is_absolute() or not output_dir.is_dir():
         raise ScanPolicyError("an existing absolute per-job output directory is required")
-    # WHY: sharing the PIA container network namespace is the Docker CLI
-    # equivalent of Compose `network_mode: service:pia-vpn`.
-    return [
-        config.docker_binary, "run", "--rm", "--read-only", "--user=65532:65532",
-        "--cap-drop=ALL",
-        "--security-opt=no-new-privileges:true", "--network",
-        f"container:{config.pia_service}", "--tmpfs", "/tmp:rw,noexec,nosuid,nodev",
-        "--mount", f"type=bind,src={output_dir},dst=/output,rw",
-        config.image, "scan", "--target", target.url, "--output", "/output",
-        "--fresh-profile", "--disable-forms", "--disable-credentials",
-        "--download-policy", config.download_policy.value,
-    ]
+    metadata = output_dir.stat()
+    if ((metadata.st_uid, metadata.st_gid) != (config.worker_uid, config.worker_gid)
+            or metadata.st_mode & 0o777 != 0o700):
+        raise ScanPolicyError("job output must be mode 0700 and owned by the worker UID/GID")
+    raise ScanPolicyError(
+        "live container command construction is disabled until a fail-closed "
+        "address-pinned runtime egress control is implemented"
+    )
 
 
 class DockerRunner:
-    """Subprocess adapter with explicit timeout, terminate, and kill behavior."""
+    """Subprocess adapter that cleans up the actual named Docker container."""
 
-    def __init__(self, popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen) -> None:
+    def __init__(self, popen: Callable[..., subprocess.Popen[bytes]] = subprocess.Popen,
+                 cleanup_run: Callable[..., subprocess.CompletedProcess[bytes]] = subprocess.run
+                 ) -> None:
         self._popen = popen
+        self._cleanup_run = cleanup_run
+
+    @staticmethod
+    def _container_contract(command: Sequence[str]) -> tuple[str, str]:
+        command = list(command)
+        try:
+            run_index = command.index("run")
+            name_index = command.index("--name", run_index + 1)
+            name = command[name_index + 1]
+        except (ValueError, IndexError) as exc:
+            raise ScanPolicyError("Docker worker command requires an explicit --name") from exc
+        if not _SAFE_JOB_ID.fullmatch(name):
+            raise ScanPolicyError("Docker worker container name is unsafe")
+        return command[0], name
+
+    def _docker_cleanup(self, docker: str, name: str, action: str,
+                        *arguments: str) -> None:
+        try:
+            self._cleanup_run(
+                [docker, action, *arguments, name], stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE, check=False,
+                timeout=_DOCKER_CLEANUP_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            # Cleanup is best-effort across daemon/CLI failures; the timeout is
+            # still reported and every cleanup stage is attempted.
+            pass
 
     def run(self, command: Sequence[str], *, timeout_seconds: float,
             kill_grace_seconds: float) -> None:
         """Run a worker and forcibly kill it if graceful termination fails."""
+        docker, container_name = self._container_contract(command)
         try:
             process = self._popen(list(command), stdout=subprocess.PIPE,
                                   stderr=subprocess.PIPE)
@@ -299,12 +356,19 @@ class DockerRunner:
         try:
             _stdout, stderr = process.communicate(timeout=timeout_seconds)
         except subprocess.TimeoutExpired as exc:
-            process.terminate()
+            grace = str(max(0, int(kill_grace_seconds)))
+            self._docker_cleanup(docker, container_name, "stop", "--time", grace)
             try:
                 process.communicate(timeout=kill_grace_seconds)
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.communicate()
+                self._docker_cleanup(docker, container_name, "kill")
+                try:
+                    process.communicate(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()  # reap a wedged CLI after container cleanup
+                    process.communicate()
+            finally:
+                self._docker_cleanup(docker, container_name, "rm", "--force")
             raise ScanExecutionError("scanner worker timed out and was stopped") from exc
         if process.returncode != 0:
             detail = stderr.decode("utf-8", errors="replace")[-1000:]

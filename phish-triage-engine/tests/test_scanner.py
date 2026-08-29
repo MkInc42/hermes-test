@@ -113,22 +113,45 @@ def test_job_output_accepts_uuid_and_safe_name_and_blocks_symlink_escape(tmp_pat
         create_job_output_dir(root, "linked-job")
 
 
-def test_live_route_is_fail_closed_and_command_is_hardened(tmp_path):
+def test_job_output_is_worker_writable_without_world_access(tmp_path):
+    worker_uid = os.geteuid()
+    worker_gid = os.getegid()
+    output = create_job_output_dir(tmp_path / "jobs", "worker-owned",
+                                   worker_uid=worker_uid, worker_gid=worker_gid)
+    metadata = output.stat()
+    assert (metadata.st_uid, metadata.st_gid) == (worker_uid, worker_gid)
+    assert metadata.st_mode & 0o777 == 0o700
+    assert metadata.st_mode & 0o007 == 0  # unrelated identities get no access
+    artifact = output / "artifact.json"
+    artifact.write_bytes(b"{}")
+    assert artifact.read_bytes() == b"{}"
+
+
+def test_live_worker_identity_defaults_to_declared_non_root_uid_gid():
+    config = ScannerConfig()
+    assert (config.worker_uid, config.worker_gid) == (65532, 65532)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("worker_uid", -1), ("worker_gid", -1), ("worker_uid", True),
+    ("worker_gid", 2**31),
+])
+def test_worker_identity_is_explicitly_validated(field, value):
+    with pytest.raises(ScanPolicyError, match=field):
+        ScannerConfig(**{field: value})
+
+
+def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
     output = create_job_output_dir(tmp_path.resolve(), uuid.uuid4())
     target = validate_url("https://example.test/", resolver=_resolver_for("8.8.8.8"))
     with pytest.raises(ScanPolicyError, match="pia-sidecar"):
         build_container_command(ScannerConfig(), target, output)
-    command = build_container_command(
-        ScannerConfig(route_mode=RouteMode.PIA_SIDECAR), target, output
-    )
-    joined = " ".join(command)
-    assert "--read-only" in command
-    assert "--user=65532:65532" in command
-    assert "--cap-drop=ALL" in command
-    assert "--security-opt=no-new-privileges:true" in command
-    assert "--network container:pia-vpn" in joined
-    assert "--fresh-profile --disable-forms --disable-credentials" in joined
-    assert "--download-policy blocked" in joined
+    # A public preflight answer cannot authorize passing an attacker-controlled
+    # hostname to a namespace where its next answer could be 127.0.0.1/private.
+    local = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
+                          worker_uid=os.geteuid(), worker_gid=os.getegid())
+    with pytest.raises(ScanPolicyError, match="address-pinned runtime egress"):
+        build_container_command(local, target, output)
 
 
 class _HungProcess:
@@ -153,12 +176,68 @@ class _HungProcess:
         self.killed = True
 
 
-def test_timeout_terminates_then_kills():
-    process = _HungProcess()
-    runner = DockerRunner(lambda *_args, **_kwargs: process)
+class _GracefulAfterStopProcess(_HungProcess):
+    def communicate(self, timeout=None):
+        self.calls += 1
+        if self.calls == 1:
+            raise subprocess.TimeoutExpired("scanner", timeout)
+        self.returncode = 0
+        return b"", b""
+
+
+def test_timeout_stops_named_container_gracefully_then_removes():
+    process = _GracefulAfterStopProcess()
+    cleanup = []
+    runner = DockerRunner(lambda *_args, **_kwargs: process,
+                          lambda command, **_kwargs: cleanup.append(command))
     with pytest.raises(ScanExecutionError, match="timed out"):
-        runner.run(["scanner"], timeout_seconds=0.01, kill_grace_seconds=0.01)
-    assert process.terminated and process.killed
+        runner.run(["docker", "run", "--name", "pte-scan-job1", "image"],
+                   timeout_seconds=0.01, kill_grace_seconds=2)
+    assert cleanup == [
+        ["docker", "stop", "--time", "2", "pte-scan-job1"],
+        ["docker", "rm", "--force", "pte-scan-job1"],
+    ]
+
+
+def test_timeout_forces_named_container_kill_then_removes():
+    process = _HungProcess()
+    cleanup = []
+    runner = DockerRunner(lambda *_args, **_kwargs: process,
+                          lambda command, **_kwargs: cleanup.append(command))
+    with pytest.raises(ScanExecutionError, match="timed out"):
+        runner.run(["docker", "run", "--name", "pte-scan-job2", "image"],
+                   timeout_seconds=0.01, kill_grace_seconds=0.01)
+    assert cleanup == [
+        ["docker", "stop", "--time", "0", "pte-scan-job2"],
+        ["docker", "kill", "pte-scan-job2"],
+        ["docker", "rm", "--force", "pte-scan-job2"],
+    ]
+
+
+def test_cleanup_calls_are_bounded_and_failures_do_not_skip_later_stages():
+    process = _HungProcess()
+    cleanup = []
+
+    def failing_cleanup(command, **kwargs):
+        cleanup.append((command, kwargs))
+        if command[1] == "stop":
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        if command[1] == "kill":
+            raise OSError("docker unavailable")
+
+    runner = DockerRunner(lambda *_args, **_kwargs: process, failing_cleanup)
+    with pytest.raises(ScanExecutionError, match="timed out"):
+        runner.run(["docker", "run", "--name", "pte-scan-job3", "image"],
+                   timeout_seconds=0.01, kill_grace_seconds=0.01)
+
+    assert [call[0][1] for call in cleanup] == ["stop", "kill", "rm"]
+    assert all(call[1]["timeout"] == 5.0 for call in cleanup)
+
+
+def test_runner_requires_named_container_contract():
+    with pytest.raises(ScanPolicyError, match="explicit --name"):
+        DockerRunner().run(["docker", "run", "image"], timeout_seconds=1,
+                           kill_grace_seconds=0)
 
 
 def test_worker_start_oserror_is_scan_execution_error():
@@ -167,7 +246,8 @@ def test_worker_start_oserror_is_scan_execution_error():
 
     with pytest.raises(ScanExecutionError, match="could not be started"):
         DockerRunner(unavailable).run(
-            ["scanner"], timeout_seconds=1, kill_grace_seconds=0,
+            ["docker", "run", "--name", "pte-scan-start", "image"],
+            timeout_seconds=1, kill_grace_seconds=0,
         )
 
 

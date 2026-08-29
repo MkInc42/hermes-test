@@ -835,6 +835,118 @@ def add_report(
         return row
 
 
+def persist_report_bundle(
+    cfg: DbConfig,
+    *,
+    tenant_uid: str,
+    job_id: uuid.UUID | str,
+    storage_writer: Callable[[str, bytes], str],
+    actor: str = "report-generator",
+) -> dict[str, Any]:
+    """Generate and atomically link canonical JSON and Markdown report files.
+
+    Artifact bytes are content-addressed before the database transaction commits.
+    A failed SQL transaction can therefore leave only harmless unreferenced blobs,
+    never a partial report lifecycle or partially linked evidence chain.
+    """
+    from .reports import REPORT_VERSION, assemble_content_pack, render_json, render_markdown
+
+    tenant_uid = require_tenant(tenant_uid)
+    bundle = get_job_bundle(cfg, tenant_uid, job_id)
+    pack = assemble_content_pack(bundle)
+    json_data = render_json(pack).encode("utf-8")
+    markdown_data = render_markdown(pack).encode("utf-8")
+    json_pointer = storage_writer(tenant_uid, json_data)
+    markdown_pointer = storage_writer(tenant_uid, markdown_data)
+    submission_id = bundle["job"]["submission_id"]
+    risk_scores = bundle.get("risk_scores", [])
+    risk_score_id = risk_scores[-1]["risk_score_id"] if risk_scores else None
+    evidence = pack["observed_facts"]["submitted_evidence"] + pack["observed_facts"]["derived_artifacts"]
+    manifest = {
+        "schema": pack["schema"], "version": REPORT_VERSION,
+        "content_pack_sha256": compute_sha256(json_data),
+        "job": {"job_id": str(job_id), "submission_id": str(submission_id),
+                "source_type": pack["job"]["source_type"],
+                "state_at_assembly": pack["job"]["state"]},
+        "evidence": [
+            {key: row[key] for key in ("artifact_id", "relationship", "kind", "media_type",
+                                       "sha256", "captured_at", "byte_size") if key in row}
+            for row in evidence
+        ],
+    }
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT submission_id, state FROM jobs WHERE job_id=%s AND tenant_uid=%s FOR UPDATE",
+            (job_id, tenant_uid),
+        )
+        job = cur.fetchone()
+        if job is None:
+            raise CrossTenantAccessError(f"job {job_id} not found under tenant {tenant_uid}")
+        if job["submission_id"] != submission_id:
+            raise ValidationError("job changed during report generation")
+        if job["state"] in {"blocked", "failed", "expired"}:
+            raise ValidationError(f"cannot report a job in {job['state']} state")
+        cur.execute(
+            "UPDATE jobs SET state='reporting' WHERE job_id=%s AND tenant_uid=%s RETURNING state",
+            (job_id, tenant_uid),
+        )
+        if cur.fetchone() is None:
+            raise CrossTenantAccessError(f"job {job_id} not found under tenant {tenant_uid}")
+        cur.execute(
+            """INSERT INTO audit_events (tenant_uid,job_id,actor,action,outcome,detail)
+               VALUES (%s,%s,%s,'job_state:reporting','ok',%s)""",
+            (tenant_uid, job_id, actor,
+             json.dumps({"reason": "report artifacts generated"})),
+        )
+        cur.execute("SELECT COALESCE(MAX(report_version),0)+1 AS v FROM reports WHERE tenant_uid=%s AND job_id=%s",
+                    (tenant_uid, job_id))
+        report_version = cur.fetchone()["v"]
+        derived_rows = []
+        for media_type, data, pointer in (
+            ("application/json", json_data, json_pointer),
+            ("text/markdown; charset=utf-8", markdown_data, markdown_pointer),
+        ):
+            cur.execute(
+                """INSERT INTO derived_artifacts
+                   (tenant_uid,job_id,submission_id,derived_kind,media_type,sha256,
+                    byte_size,storage_pointer,produced_by,tool_version)
+                   VALUES (%s,%s,%s,'report_file',%s,%s,%s,%s,%s,%s)
+                   RETURNING derived_id,derived_kind,media_type,sha256,byte_size""",
+                (tenant_uid, job_id, submission_id, media_type, compute_sha256(data),
+                 len(data), pointer, actor, REPORT_VERSION),
+            )
+            derived_rows.append(dict(cur.fetchone()))
+        manifest["report_files"] = [
+            {"artifact_id": str(row["derived_id"]), "relationship": "generated_report",
+             "kind": row["derived_kind"], "media_type": row["media_type"],
+             "sha256": row["sha256"], "byte_size": row["byte_size"]}
+            for row in derived_rows
+        ]
+        cur.execute(
+            """INSERT INTO reports
+               (tenant_uid,job_id,submission_id,report_version,audience,format,risk_score_id,
+                executive_finding,evidence_manifest,redaction_state,storage_pointer,sha256,generated_by)
+               VALUES (%s,%s,%s,%s,'internal','markdown',%s,%s,%s,'redacted',%s,%s,%s)
+               RETURNING report_id,report_version,audience,format,redaction_state,sha256,evidence_manifest""",
+            (tenant_uid, job_id, submission_id, report_version, risk_score_id,
+             pack["executive_summary"]["finding"], json.dumps(manifest), markdown_pointer,
+             compute_sha256(markdown_data), actor),
+        )
+        report = dict(cur.fetchone())
+        cur.execute("UPDATE jobs SET state='completed',finished_at=now() WHERE job_id=%s AND tenant_uid=%s",
+                    (job_id, tenant_uid))
+        cur.execute(
+            """INSERT INTO audit_events (tenant_uid,job_id,actor,action,outcome,detail)
+               VALUES (%s,%s,%s,'job_state:completed','ok',%s)""",
+            (tenant_uid, job_id, actor,
+             json.dumps({"reason": "report bundle persisted"})),
+        )
+        conn.commit()
+    return {"content_pack": pack, "json": json_data.decode("utf-8"),
+            "markdown": markdown_data.decode("utf-8"), "report": report,
+            "report_files": derived_rows, "state": "completed"}
+
+
 def set_source_status(
     cfg: DbConfig,
     tenant_uid: str,
@@ -890,8 +1002,12 @@ def get_job_bundle(cfg: DbConfig, tenant_uid: str, job_id: uuid.UUID | str) -> d
         cur.execute(
             """
             SELECT j.job_id, j.tenant_uid, j.submission_id, j.source_type, j.state,
-                   j.policy_decisions, j.created_at, j.finished_at
-            FROM jobs j WHERE j.job_id = %s AND j.tenant_uid = %s
+                   j.policy_decisions, j.created_at, j.finished_at,
+                   s.case_reference, s.fidelity, s.submitted_at
+            FROM jobs j
+            JOIN submissions s ON s.submission_id = j.submission_id
+                              AND s.tenant_uid = j.tenant_uid
+            WHERE j.job_id = %s AND j.tenant_uid = %s
             """,
             (job_id, tenant_uid),
         )
@@ -914,7 +1030,7 @@ def get_job_bundle(cfg: DbConfig, tenant_uid: str, job_id: uuid.UUID | str) -> d
                 "artifact_id",
             ),
             "derived_artifacts": scoped(
-                "SELECT derived_id, derived_kind, media_type, sha256, storage_pointer,"
+                "SELECT derived_id, derived_kind, media_type, sha256, byte_size, storage_pointer,"
                 " produced_by, produced_at FROM derived_artifacts"
                 " WHERE job_id = %s AND tenant_uid = %s ORDER BY produced_at",
                 "derived_id",
@@ -951,7 +1067,7 @@ def get_job_bundle(cfg: DbConfig, tenant_uid: str, job_id: uuid.UUID | str) -> d
                 "report_id",
             ),
             "source_status": scoped(
-                "SELECT source_type, status, updated_at FROM source_status"
+                "SELECT source_type, status, status_detail, updated_at FROM source_status"
                 " WHERE job_id = %s AND tenant_uid = %s",
                 "source_type",
             ),

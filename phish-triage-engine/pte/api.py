@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 # WHY: FastAPI supplies the validated HTTP boundary and multipart primitives.
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 # WHY: Pydantic enforces strict, declarative schemas before intake data is persisted.
 from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError
 import psycopg
@@ -16,7 +16,9 @@ from .artifacts import ArtifactStorageError, ArtifactStore
 from .db import DbConfig, connect
 from .intake import (IntakeValidationError, derive_pasted_headers, extract_ocr_indicators, normalize_url,
                      prepare_email, safe_filename, validate_ocr, validate_screenshot)
-from .services import compute_sha256, TenantRequiredError, ValidationError, create_intake_bundle
+from .reports import assemble_content_pack, render_markdown
+from .services import (CrossTenantAccessError, TenantRequiredError, ValidationError,
+                       compute_sha256, create_intake_bundle, get_job_bundle)
 
 
 class Attested(BaseModel):
@@ -131,6 +133,28 @@ def create_app(db_config: DbConfig | None = None, artifact_store: ArtifactStore 
         except psycopg.Error as exc:
             raise HTTPException(503, "database unavailable") from exc
         return {"status": "ok"}
+
+    def report_pack(request: Request, job_id: str, tenant_uid: str) -> dict[str, Any]:
+        """Resolve and assemble a report through the canonical scoped read path."""
+        try:
+            return assemble_content_pack(get_job_bundle(_cfg(request), tenant_uid, job_id))
+        except (CrossTenantAccessError, TenantRequiredError) as exc:
+            raise HTTPException(404, "report not found") from exc
+        except (ValueError, psycopg.Error) as exc:
+            raise HTTPException(404, "report not found") from exc
+
+    @app.get("/v1/reports/{job_id}/content-pack")
+    def export_report_json(request: Request, job_id: str,
+                           tenant_uid: Annotated[str, Query(min_length=1)]) -> dict[str, Any]:
+        """Return the deterministic, redacted JSON content pack (never artifact bytes)."""
+        return report_pack(request, job_id, tenant_uid)
+
+    @app.get("/v1/reports/{job_id}/markdown", response_class=PlainTextResponse)
+    def export_report_markdown(request: Request, job_id: str,
+                               tenant_uid: Annotated[str, Query(min_length=1)]) -> PlainTextResponse:
+        """Return a redacted Markdown export without exposing storage pointers."""
+        return PlainTextResponse(render_markdown(report_pack(request, job_id, tenant_uid)),
+                                 media_type="text/markdown")
 
     @app.post("/v1/intake/url", status_code=202)
     def intake_url(payload: UrlIntake, request: Request) -> dict[str, Any]:

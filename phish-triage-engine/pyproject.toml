@@ -27,6 +27,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 packages = [{ include = "pte" }]
+include = ["pte/data/public_suffix_list.dat"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,0 +1,84 @@
+{
+  "case_name": "FedEx smishing fixture",
+  "source_type": "ocr_text_message",
+  "ocr_text": "FedEx: We could not deliver your parcel. Confirm address and pay redelivery fee at https://fedex.delivery.example.test/track?pkg=ZX901 before 6 PM.",
+  "target_url": "https://fedex.delivery.example.test/track?pkg=ZX901",
+  "brand_terms": ["fedex"],
+  "dom_html": "<!doctype html><html><head><title>FedEx Redelivery</title></head><body><form action='/submit' method='post'><input id='email' name='email' autocomplete='email'><input id='password' name='password' type='password'><input id='cardNumber' name='card_number' autocomplete='cc-number'><input id='cvv' name='cvv'><input id='otp' name='otp_code' autocomplete='one-time-code'><button>Verify and Continue</button></form></body></html>",
+  "provider_results": {
+    "dns": {
+      "status": "ok",
+      "provider": "dns-fixture",
+      "data": {
+        "a": ["203.0.113.44"],
+        "mx": [],
+        "ns": ["ns1.fast-flux-fixture.test"],
+        "newly_seen": true
+      },
+      "limitations": ["Fixture address uses RFC 5737 documentation space; not a live DNS result."]
+    },
+    "rdap_whois": {
+      "status": "ok",
+      "provider": "rdap-fixture",
+      "data": {
+        "registrar": "Example Registrar LLC",
+        "created_date": "2026-08-28T18:30:00Z",
+        "registrant_redacted": true
+      }
+    },
+    "asn_hosting": {
+      "status": "ok",
+      "provider": "asn-fixture",
+      "data": {
+        "asn": 64512,
+        "name": "EXAMPLE-HOSTING",
+        "country": "ZZ",
+        "hosting_risk": "abuse-prone"
+      }
+    },
+    "tls_certificate_transparency": {
+      "status": "ok",
+      "provider": "ct-fixture",
+      "data": {
+        "issuer": "Example DV CA",
+        "not_before": "2026-08-28T18:45:00Z",
+        "san_count": 1,
+        "brand_terms_in_recent_sans": ["fedex"]
+      }
+    },
+    "domain_age": {
+      "status": "ok",
+      "provider": "rdap-fixture",
+      "data": {
+        "created_date": "2026-08-28T18:30:00Z",
+        "days_old": 1
+      }
+    },
+    "google_safe_browsing": {
+      "status": "not_found",
+      "provider": "gsb-fixture",
+      "data": {
+        "malicious": false,
+        "matches": []
+      },
+      "limitations": ["No match is not proof of benignness; reputation feeds often lag new smishing domains."]
+    },
+    "urlhaus_abusech": {
+      "status": "not_found",
+      "provider": "urlhaus-fixture",
+      "data": {
+        "malicious": false,
+        "matches": []
+      },
+      "limitations": ["URLhaus primarily tracks malware payload URLs; credential-only lures may be absent."]
+    },
+    "otx": {
+      "status": "ok",
+      "provider": "otx-fixture",
+      "data": {
+        "malicious": false,
+        "pulse_count": 0
+      }
+    }
+  }
+}

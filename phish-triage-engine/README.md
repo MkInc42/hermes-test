@@ -30,6 +30,31 @@ Uploads use multipart endpoints `/v1/intake/email/upload` and `/v1/intake/screen
 
 Run verification with `poetry run pytest` and `poetry run python -m compileall -q pte tests`. Tests use the existing local Postgres fixture and create the disposable `phish_triage_test` database.
 
+## Analyst report artifacts
+
+`pte.reports` assembles schema-versioned analyst content packs from the canonical,
+tenant-scoped job bundle. JSON and Markdown renderings are deterministic and
+contain only artifact IDs, SHA-256 references, defanged IOCs, source status,
+explicit fact/inference labels, caveats, TTPs, safety controls, and defensive
+recommendations. Raw bodies, raw URLs, URL queries/tokens, PII, artifact bytes,
+storage pointers, and local paths are excluded.
+
+Application code persists both renderings atomically with
+`persist_report_bundle(..., storage_writer=artifact_store.put)`. This creates two
+`derived_artifacts` rows of kind `report_file`, versions the final `reports` row,
+records its evidence manifest and hashes, and advances the job through reporting
+to completed with audit events.
+
+Scoped exports require the owning tenant UID and never read artifact bytes:
+
+```bash
+curl 'http://127.0.0.1:8000/v1/reports/JOB_UUID/content-pack?tenant_uid=cust_EXAMPLE'
+curl 'http://127.0.0.1:8000/v1/reports/JOB_UUID/markdown?tenant_uid=cust_EXAMPLE'
+```
+
+A missing or wrong tenant resolves as not found. These are protected internal
+report reads, not public scanning or browser endpoints.
+
 ## Disposable scan-runner proof of concept
 
 The scanner contract has an offline-only deterministic proof path. It performs
@@ -61,6 +86,30 @@ Preflight DNS validation alone cannot prevent rebinding when the browser later
 resolves an attacker-controlled hostname inside an unrestricted shared network
 namespace. Live commands will remain disabled until the runtime contract pins
 validated public addresses and independently blocks private egress.
+
+## OSINT enrichment worker contract
+
+`pte.enrichment` defines the deterministic backend contract for passive OSINT
+enrichment and evidence-based risk scoring. The worker performs no live network
+I/O itself; provider clients will later populate the same source slots. Current
+source outputs are fixed by schema version 1: DNS, RDAP/WHOIS, ASN/hosting,
+TLS/certificate transparency, Google Safe Browsing, URLhaus/abuse.ch, OTX, URL
+parsing tricks, domain age, static DOM indicators, and source status. Each
+source carries `status`, `provider`, `observable`, normalized `data`, and
+explicit `limitations` so clean or missing reputation lookups do not become a
+black-box benign verdict.
+
+The score is a deterministic weighted-evidence model (`deterministic-weighted-
+evidence-v1`) that stores the exact evidence and limitations in `risk_scores`
+and persists the canonical JSON as an `enrichment_payload` artifact. URL parsing
+uses a pinned complete offline Public Suffix List snapshot for
+registrable-domain decisions instead of live PSL fetches or last-two-label
+guesses. DOM parsing is static only: credential, card, OTP, form, script,
+iframe, and support/verify CTA
+indicators are extracted without JavaScript execution or credential submission.
+`tests/fixtures/fedex_smishing_case.json` is the FedEx-style smishing fixture
+used by `tests/test_enrichment.py` to prove the JSON contract, source-status
+coverage, risk evidence, limitations, and tenant-scoped Postgres persistence.
 
 The future design retains `ScannerConfig(route_mode=PIA_SIDECAR)` and the VPN
 container namespace. Its per-job output directory must be mode `0700` and owned

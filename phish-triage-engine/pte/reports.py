@@ -3,80 +3,162 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
 import re
+import unicodedata
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlsplit
+
+from .enrichment import SOURCE_NAMES
 
 REPORT_SCHEMA = "pte.analyst-content-pack"
 REPORT_VERSION = "1.0"
 
 
-def _text(value: Any, fallback: str = "unknown") -> str:
-    """Return a bounded, single-line label, never arbitrary structured input."""
-    if not isinstance(value, str) or not value.strip():
+_SAFE_IDENTIFIER = re.compile(r"[A-Za-z0-9_-]{1,160}\Z")
+_SAFE_PROVIDER = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_-]{0,78}[A-Za-z0-9])?\Z")
+_CREDENTIAL_MARKER = re.compile(
+    r"(?:bearer|credential|password|secret|token|api[_-]?key)", re.IGNORECASE
+)
+_SAFE_SHA256 = re.compile(r"[0-9a-fA-F]{64}\Z")
+_DOMAIN_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\Z")
+_EMAIL_LOCAL = re.compile(r"[A-Za-z0-9.!$%&'+=?^~-]{1,64}\Z")
+_HEX_HASH_LENGTHS = frozenset({32, 40, 64, 128})
+_UNSAFE_INDICATOR_TEXT = re.compile(r"[\x00-\x1f\x7f`*_{}\[\]()<>#!|\\]")
+_REDACTED_INDICATOR = "[redacted indicator]"
+
+
+def _identifier(value: Any, fallback: str = "unknown") -> str:
+    """Accept only opaque identifiers, never arbitrary display text."""
+    text = str(value) if value is not None else ""
+    return text if _SAFE_IDENTIFIER.fullmatch(text) else fallback
+
+
+def _choice(value: Any, allowed: frozenset[str], fallback: str = "unknown") -> str:
+    """Return a value only when it belongs to a report-owned vocabulary."""
+    return value if isinstance(value, str) and value in allowed else fallback
+
+
+def _provider_identifier(value: Any, fallback: str = "unknown") -> str:
+    """Keep bounded provider labels, excluding free text and credential markers."""
+    if not isinstance(value, str) or not _SAFE_PROVIDER.fullmatch(value):
         return fallback
-    return " ".join(value.strip().split())[:160]
+    return fallback if _CREDENTIAL_MARKER.search(value) else value
+
+
+ARTIFACT_KINDS = frozenset({
+    "attachment", "email", "email_body", "har", "ocr_output", "ocr_text",
+    "redirect_chain", "report_file", "screenshot", "screenshot_capture",
+})
+MEDIA_TYPES = frozenset({"application/json", "application/pdf", "message/rfc822",
+                         "image/gif", "image/jpeg", "image/png", "image/webp",
+                         "text/html", "text/plain"})
+SOURCE_TYPES = frozenset(SOURCE_NAMES) | frozenset({
+    "raw_url", "email_artifact", "ocr_text_message", "screenshot_evidence",
+})
+STATUSES = frozenset({"blocked", "completed", "enriched", "error", "failed",
+                      "not_found", "ok", "parsed", "partial", "pending", "queued",
+                      "received", "scan_pending", "scanned", "skipped", "unavailable",
+                      "unknown", "unreachable"})
+CLASSIFICATIONS = frozenset({"benign", "blocked_insufficient_evidence", "malware_delivery",
+                             "phishing", "suspicious", "unknown"})
 
 
 def _timestamp(value: Any) -> str | None:
     """Render backend timestamps deterministically without inventing a value."""
     if isinstance(value, (datetime, date)):
         return value.isoformat()
-    if isinstance(value, str) and value.strip():
-        return _text(value)
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+        except ValueError:
+            return None
     return None
 
 
-def _safe_detail(value: Any) -> str | None:
-    """Keep a useful status limitation while suppressing common sensitive values."""
-    if not isinstance(value, str) or not value.strip():
+def _validated_domain(value: str) -> str | None:
+    """Return a normalized strict ASCII DNS name, or fail closed."""
+    if not value or len(value) > 253 or value.endswith("."):
         return None
-    text = " ".join(value.strip().split())
-    text = re.sub(r"(?i)\bhttps?://\S+", "[redacted URL]", text)
-    text = re.sub(r"(?i)\b[^\s@]+@[^\s@]+\b", "[redacted email]", text)
-    text = re.sub(r"(?i)\bstorage_pointer\s*[:=]\s*\S+", "storage pointer [redacted]", text)
-    text = re.sub(r"(?<!\w)(?:/[\w.-]+){2,}", "[redacted path]", text)
-    return text[:240]
+    labels = value.split(".")
+    if len(labels) < 2 or any(not _DOMAIN_LABEL.fullmatch(label) for label in labels):
+        return None
+    return value.lower()
+
+
+def _defanged_host(value: str) -> str | None:
+    """Validate a URL host as either an IP literal or strict DNS name."""
+    try:
+        address = ipaddress.ip_address(value)
+    except ValueError:
+        domain = _validated_domain(value)
+        return domain.replace(".", "[.]") if domain else None
+    rendered = address.compressed
+    return rendered.replace(".", "[.]").replace(":", "[:]")
 
 
 def defang_indicator(indicator_type: str, raw_value: str) -> str:
-    """Render an IOC inert while suppressing URL paths, queries, and PII."""
+    """Render only validated IOCs, suppressing all untrusted IOC detail on failure."""
+    if not isinstance(raw_value, str):
+        return _REDACTED_INDICATOR
+    if (_UNSAFE_INDICATOR_TEXT.search(raw_value)
+            or any(unicodedata.category(ch) == "Cc" for ch in raw_value)):
+        return _REDACTED_INDICATOR
     value = raw_value.strip()
+    if not value:
+        return _REDACTED_INDICATOR
     if indicator_type == "url":
         try:
             parsed = urlsplit(value)
-            host = (parsed.hostname or "").replace(".", "[.]")
+            if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+                return _REDACTED_INDICATOR
+            host = _defanged_host(parsed.hostname or "")
             if not host:
-                return "[redacted malformed URL]"
+                return _REDACTED_INDICATOR
             port = f":{parsed.port}" if parsed.port else ""
             scheme = "hxxps" if parsed.scheme.lower() == "https" else "hxxp"
-            suffix = "/[…redacted…]" if parsed.path not in {"", "/"} or parsed.query else ""
+            suffix = "/[…redacted…]" if (
+                parsed.path not in {"", "/"} or parsed.query or parsed.fragment
+            ) else ""
             return f"{scheme}://{host}{port}{suffix}"
         except (ValueError, UnicodeError):
-            return "[redacted malformed URL]"
+            return _REDACTED_INDICATOR
     if indicator_type in {"domain", "hostname"}:
-        return value.lower().replace(".", "[.]")[:253]
+        domain = _validated_domain(value)
+        return domain.replace(".", "[.]") if domain else _REDACTED_INDICATOR
     if indicator_type == "ip":
-        return value.replace(".", "[.]").replace(":", "[:]")[:80]
+        try:
+            address = ipaddress.ip_address(value)
+        except ValueError:
+            return _REDACTED_INDICATOR
+        return address.compressed.replace(".", "[.]").replace(":", "[:]")
     if indicator_type == "email_address":
-        domain = value.rsplit("@", 1)[-1] if "@" in value else "redacted.invalid"
-        return f"***@{domain.lower().replace('.', '[.]')}"
+        if value.count("@") != 1:
+            return _REDACTED_INDICATOR
+        local, raw_domain = value.split("@")
+        domain = _validated_domain(raw_domain)
+        if (not domain or not _EMAIL_LOCAL.fullmatch(local) or local.startswith(".")
+                or local.endswith(".") or ".." in local):
+            return _REDACTED_INDICATOR
+        return f"***@{domain.replace('.', '[.]')}"
     if indicator_type == "phone_number":
         digits = "".join(ch for ch in value if ch.isdigit())
         return f"***-***-{digits[-4:]}" if len(digits) >= 4 else "[redacted phone]"
     if indicator_type == "file_hash":
-        return value.lower()[:128]
-    return "[redacted indicator]"
+        if len(value) in _HEX_HASH_LENGTHS and re.fullmatch(r"[0-9a-fA-F]+", value):
+            return value.lower()
+        return _REDACTED_INDICATOR
+    return _REDACTED_INDICATOR
 
 
 def _artifact_reference(row: dict[str, Any], *, derived: bool = False) -> dict[str, Any]:
     reference = {
-        "artifact_id": str(row["derived_id"] if derived else row["artifact_id"]),
-        "kind": _text(row.get("derived_kind") if derived else row.get("artifact_type")),
-        "media_type": _text(row.get("media_type")),
-        "sha256": _text(row.get("sha256")),
+        "artifact_id": _identifier(row["derived_id"] if derived else row["artifact_id"]),
+        "kind": _choice(row.get("derived_kind") if derived else row.get("artifact_type"), ARTIFACT_KINDS),
+        "media_type": _choice(row.get("media_type"), MEDIA_TYPES),
+        "sha256": str(row.get("sha256")) if _SAFE_SHA256.fullmatch(str(row.get("sha256", ""))) else "unknown",
         "relationship": "derived" if derived else "submitted",
     }
     captured_at = _timestamp(row.get("produced_at") if derived else row.get("captured_at"))
@@ -85,20 +167,6 @@ def _artifact_reference(row: dict[str, Any], *, derived: bool = False) -> dict[s
     if isinstance(row.get("byte_size"), int) and row["byte_size"] >= 0:
         reference["byte_size"] = row["byte_size"]
     return reference
-
-
-def _source_detail(row: dict[str, Any]) -> str | None:
-    details = row.get("status_detail") or row.get("result")
-    if not isinstance(details, dict):
-        return None
-    for key in ("limitation", "limitations", "reason", "error_class", "message"):
-        value = details.get(key)
-        if isinstance(value, list):
-            value = "; ".join(str(item) for item in value if isinstance(item, str))
-        safe = _safe_detail(value)
-        if safe:
-            return safe
-    return None
 
 
 def assemble_content_pack(bundle: dict[str, Any]) -> dict[str, Any]:
@@ -118,15 +186,15 @@ def assemble_content_pack(bundle: dict[str, Any]) -> dict[str, Any]:
     indicators = []
     for row in bundle.get("indicators", []):
         raw = str(row.get("raw_value") or "")
-        provenance = _text(row.get("provenance"))
+        provenance = _choice(row.get("provenance"), frozenset({"ocr_derived", "submitted", "derived"}))
         indicators.append({
-            "type": _text(row.get("indicator_type")),
-            "value": defang_indicator(_text(row.get("indicator_type")), raw),
+            "type": _choice(row.get("indicator_type"), frozenset({"domain", "email_address", "file_hash", "hostname", "ip", "phone_number", "url"})),
+            "value": defang_indicator(_choice(row.get("indicator_type"), frozenset({"domain", "email_address", "file_hash", "hostname", "ip", "phone_number", "url"})), raw),
             "value_sha256": hashlib.sha256(raw.encode("utf-8")).hexdigest(),
             "provenance": provenance,
             "provenance_label": "OCR-derived; transcription unverified"
             if provenance == "ocr_derived" else "Observed in submitted or derived evidence",
-            "corroboration_status": _text(row.get("corroboration_status"), "unverified"),
+            "corroboration_status": _choice(row.get("corroboration_status"), frozenset({"corroborated", "unverified"}), "unverified"),
         })
     indicators.sort(key=lambda item: (item["type"], item["value"], item["value_sha256"]))
 
@@ -145,10 +213,10 @@ def assemble_content_pack(bundle: dict[str, Any]) -> dict[str, Any]:
         limitations.append("No submitted artifact references were available.")
     if job.get("fidelity") in {"partial", "low"}:
         limitations.append(
-            f"Submission fidelity was {_text(job.get('fidelity'))}; original context may be incomplete."
+            f"Submission fidelity was {_choice(job.get('fidelity'), frozenset({'partial', 'low'}))}; original context may be incomplete."
         )
 
-    classification = _text(risk.get("classification")) if risk else "blocked_insufficient_evidence"
+    classification = _choice(risk.get("classification"), CLASSIFICATIONS) if risk else "blocked_insufficient_evidence"
     confidence = float(risk["confidence"]) if risk and risk.get("confidence") is not None else 0.0
     score = float(risk["score"]) if risk and risk.get("score") is not None else 0.0
     finding = (
@@ -158,14 +226,14 @@ def assemble_content_pack(bundle: dict[str, Any]) -> dict[str, Any]:
     )
 
     sources = [{
-        "source": _text(row.get("source")), "provider": _text(row.get("provider")),
-        "status": _text(row.get("status")), "fact": "Provider lookup status was recorded.",
-        **({"limitation": detail} if (detail := _source_detail(row)) else {}),
+        "source": _choice(row.get("source"), SOURCE_TYPES),
+        "provider": _provider_identifier(row.get("provider")),
+        "status": _choice(row.get("status"), STATUSES),
+        "fact": "Provider lookup status was recorded.",
     } for row in bundle.get("enrichment_observations", [])]
     sources.extend({
-        "source": _text(row.get("source_type")), "provider": "internal pipeline",
-        "status": _text(row.get("status")), "fact": "Pipeline source status was recorded.",
-        **({"limitation": detail} if (detail := _source_detail(row)) else {}),
+        "source": _choice(row.get("source_type"), SOURCE_TYPES), "provider": "internal pipeline",
+        "status": _choice(row.get("status"), STATUSES), "fact": "Pipeline source status was recorded.",
     } for row in bundle.get("source_status", []))
     if not sources:
         sources.append({"source": "enrichment", "provider": "none", "status": "unavailable",
@@ -189,13 +257,12 @@ def assemble_content_pack(bundle: dict[str, Any]) -> dict[str, Any]:
     caveats = limitations or ["This report is a point-in-time defensive assessment, not proof of compromise."]
     return {
         "schema": REPORT_SCHEMA, "version": REPORT_VERSION,
-        "tenant_uid": str(job["tenant_uid"]), "job_id": str(job["job_id"]),
-        "submission_id": str(job["submission_id"]),
-        "job": {"source_type": _text(job.get("source_type")),
-                "state": _text(job.get("state"))},
+        "tenant_uid": _identifier(job["tenant_uid"]), "job_id": _identifier(job["job_id"]),
+        "submission_id": _identifier(job["submission_id"]),
+        "job": {"source_type": _choice(job.get("source_type"), SOURCE_TYPES),
+                "state": _choice(job.get("state"), STATUSES)},
         "submission": {
-            "case_reference": _text(job.get("case_reference"), "not provided"),
-            "fidelity": _text(job.get("fidelity")),
+            "fidelity": _choice(job.get("fidelity"), frozenset({"full", "low", "partial"})),
             "submitted_at": _timestamp(job.get("submitted_at")),
         },
         "executive_summary": {

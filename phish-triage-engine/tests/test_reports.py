@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from pte.api import create_app
 from pte.db import connect
+from pte.enrichment import SOURCE_NAMES
 from pte.reports import REPORT_SCHEMA, assemble_content_pack, render_json, render_markdown
 from pte.services import (add_enrichment_observation, add_indicators, add_input_artifact,
                           add_risk_score, create_job, create_submission, get_job_bundle,
@@ -67,6 +68,42 @@ def test_fedex_content_pack_is_safe_complete_and_deterministic():
     assert not any(value in rendered_json + rendered_md for value in forbidden)
 
 
+def test_adversarial_indicator_values_fail_closed_without_leaking_secrets():
+    bundle = _fedex_bundle()
+    attacks = [
+        ("domain", "safe.example **DOMAIN-SECRET**"),
+        ("hostname", "host.example`HOST-SECRET`"),
+        ("ip", "999.999.999.999 IP-SECRET"),
+        ("email_address", "victim EMAIL-SECRET@example.test"),
+        ("file_hash", "not-hex-HASH-SECRET"),
+        ("url", "https://URL-SECRET:password@fedex.example.test/private?token=QUERY-SECRET"),
+        ("domain", "fedex.example.test\nCONTROL-SECRET"),
+    ]
+    bundle["indicators"].extend({
+        "indicator_type": indicator_type,
+        "raw_value": raw_value,
+        "provenance": "submitted",
+        "corroboration_status": "unverified",
+    } for indicator_type, raw_value in attacks)
+
+    pack = assemble_content_pack(bundle)
+    rendered_json = render_json(pack)
+    rendered_md = render_markdown(pack)
+    combined = rendered_json + rendered_md
+
+    values = {ioc["value"] for ioc in pack["observed_facts"]["iocs"]}
+    assert "hxxps://fedex[.]delivery[.]example[.]test/[…redacted…]" in values
+    assert sum(ioc["value"] == "[redacted indicator]"
+               for ioc in pack["observed_facts"]["iocs"]) == len(attacks) - 1
+    url_ioc = next(ioc for ioc in pack["observed_facts"]["iocs"]
+                   if ioc["type"] == "url" and ioc["value"].startswith("hxxps://fedex[.]example"))
+    assert url_ioc["value"] == "hxxps://fedex[.]example[.]test/[…redacted…]"
+    for secret in ("DOMAIN-SECRET", "HOST-SECRET", "IP-SECRET", "EMAIL-SECRET",
+                   "HASH-SECRET", "URL-SECRET", "password", "QUERY-SECRET",
+                   "CONTROL-SECRET"):
+        assert secret not in combined
+
+
 def test_missing_analysis_data_emits_explicit_caveats():
     bundle = _fedex_bundle()
     bundle.update({"risk_scores": [], "enrichment_observations": [], "source_status": [],
@@ -75,6 +112,74 @@ def test_missing_analysis_data_emits_explicit_caveats():
     assert pack["executive_summary"]["classification"] == "blocked_insufficient_evidence"
     caveats = " ".join(pack["analyst_caveats"])
     assert "No risk score" in caveats and "No enrichment" in caveats and "No scanner" in caveats
+
+
+def test_untrusted_report_text_is_omitted_or_replaced_in_json_and_markdown():
+    bundle = _fedex_bundle()
+    bundle["job"]["case_reference"] = "https://secret.example/reset?token=TOPSECRET"
+    attacks = [
+        "https://secret.example/path?token=TOPSECRET",
+        "Bearer SUPERSECRET", "api_token=TOPSECRET123", "user@example.test",
+        "/home/analyst/private.txt", "s3://private-bucket/customer/object",
+        "`code` **bold** [link](https://secret.example)",
+    ]
+    bundle["enrichment_observations"] = [{
+        "source": attack, "provider": attack, "status": attack,
+        "result": {"message": attack},
+    } for attack in attacks]
+    bundle["source_status"] = [{
+        "source_type": attack, "status": attack, "status_detail": {"message": attack},
+    } for attack in attacks]
+
+    pack = assemble_content_pack(bundle)
+    rendered_json = render_json(pack)
+    rendered_md = render_markdown(pack)
+    combined = rendered_json + rendered_md
+
+    assert "case_reference" not in pack["submission"]
+    for attack in attacks:
+        assert attack not in combined
+    for secret in ("TOPSECRET", "SUPERSECRET", "user@example.test", "/home/",
+                   "s3://", "`code`", "**bold**", "[link]"):
+        assert secret not in combined
+    sources = pack["observed_facts"]["source_status"]
+    assert all(source["source"] == "unknown" and source["status"] == "unknown"
+               and "limitation" not in source for source in sources)
+    assert {source["provider"] for source in sources} == {"unknown", "internal pipeline"}
+
+
+def test_known_enrichment_sources_and_safe_provider_identifiers_remain_visible():
+    bundle = _fedex_bundle()
+    bundle["enrichment_observations"] = [
+        {"source": source, "provider": "rdap-provider" if source == "rdap_whois"
+         else f"{source}-fixture", "status": "ok", "result": {"message": "omitted"}}
+        for source in SOURCE_NAMES
+    ] + [{
+        "source": "dns", "provider": "api_token-TOPSECRET", "status": "ok",
+        "result": {"message": "https://secret.example/private"},
+    }]
+    bundle["source_status"] = [
+        {"source_type": source, "status": "received", "status_detail": {"message": "omitted"}}
+        for source in ("raw_url", "email_artifact", "ocr_text_message", "screenshot_evidence")
+    ]
+
+    pack = assemble_content_pack(bundle)
+    sources = pack["observed_facts"]["source_status"]
+    rendered = render_json(pack) + render_markdown(pack)
+
+    assert set(SOURCE_NAMES).issubset({item["source"] for item in sources})
+    assert {"raw_url", "email_artifact", "ocr_text_message", "screenshot_evidence"}.issubset(
+        {item["source"] for item in sources}
+    )
+    expected_providers = {
+        "rdap-provider" if source == "rdap_whois" else f"{source}-fixture"
+        for source in SOURCE_NAMES
+    }
+    assert expected_providers.issubset({item["provider"] for item in sources})
+    assert any(item["provider"] == "unknown" for item in sources)
+    assert "TOPSECRET" not in rendered
+    assert "secret.example" not in rendered
+    assert all("limitation" not in item for item in sources)
 
 
 def test_persist_report_bundle_links_files_manifest_hash_version_and_lifecycle(db, tenant_a):

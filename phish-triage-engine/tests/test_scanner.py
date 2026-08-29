@@ -19,10 +19,12 @@ from pte.scanner import (
     ScannerConfig,
     ScanPolicyError,
     build_container_command,
+    container_name,
     create_job_output_dir,
     handle_download,
     run_dry_scan,
     run_dry_scan_job,
+    runtime_contract,
     validate_url,
 )
 from pte.services import (
@@ -152,6 +154,60 @@ def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
                           worker_uid=os.geteuid(), worker_gid=os.getegid())
     with pytest.raises(ScanPolicyError, match="address-pinned runtime egress"):
         build_container_command(local, target, output)
+
+
+def test_operator_runtime_contract_is_deterministic_non_executing_and_pia_scoped(tmp_path):
+    job_id = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    config = ScannerConfig(
+        route_mode=RouteMode.PIA_SIDECAR,
+        worker_uid=os.geteuid(), worker_gid=os.getegid(),
+        timeout_seconds=12, kill_grace_seconds=3,
+    )
+    output = create_job_output_dir(
+        tmp_path.resolve(), job_id, worker_uid=os.geteuid(), worker_gid=os.getegid()
+    )
+    contract = runtime_contract(config, job_id, output)
+    assert contract["container_name"] == container_name(job_id)
+    assert contract["container_name"] == "pte-scan-00000000000040008000000000000001"
+    assert contract["network_mode"] == "service:pia-vpn"
+    assert contract["live_enabled"] is False
+    assert contract["single_use_output"] is True
+    assert contract["cleanup_timeout_seconds"] == 5.0
+    assert contract["required_before_live"] == [
+        "pinned-public-address-navigation", "namespace-private-egress-blocking",
+    ]
+
+
+def test_runtime_contract_rejects_wrong_job_directory_and_symlinked_path(tmp_path):
+    job_id = uuid.uuid4()
+    config = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
+                           worker_uid=os.geteuid(), worker_gid=os.getegid())
+    wrong = create_job_output_dir(tmp_path.resolve(), uuid.uuid4())
+    with pytest.raises(ScanPolicyError, match="named for the job UUID"):
+        runtime_contract(config, job_id, wrong)
+
+    real_root = tmp_path / "real"
+    output = create_job_output_dir(real_root.resolve(), job_id)
+    linked_root = tmp_path / "linked"
+    linked_root.symlink_to(real_root, target_is_directory=True)
+    with pytest.raises(ScanPolicyError, match="non-symlink"):
+        runtime_contract(config, job_id, linked_root / str(job_id))
+    assert output.is_dir()
+
+
+def test_scanner_environment_contract_contains_no_credentials(monkeypatch):
+    monkeypatch.setenv("PTE_SCANNER_ROUTE_MODE", "pia-sidecar")
+    monkeypatch.setenv("PTE_SCANNER_PIA_SERVICE", "operator-pia")
+    monkeypatch.setenv("PTE_SCANNER_ALLOWED_PORTS", "8443,9443")
+    monkeypatch.setenv("PTE_SCANNER_DOWNLOAD_POLICY", "quarantine-metadata-hash-only")
+    monkeypatch.setenv("PTE_SCANNER_DOCKER_BINARY", "/usr/bin/docker")
+    config = ScannerConfig.from_env()
+    assert config.pia_service == "operator-pia"
+    assert config.allowed_non_default_ports == frozenset({8443, 9443})
+    assert config.download_policy is DownloadPolicy.HASH_ONLY
+    assert config.docker_binary == "/usr/bin/docker"
+    assert not any("password" in field or "credential" in field
+                   for field in config.__dataclass_fields__)
 
 
 class _HungProcess:
@@ -438,6 +494,49 @@ def test_run_dry_scan_job_creates_files_and_persists_completion(
     assert bundle["source_status"][0]["status"] == "scanned"
     assert all((store.root / row["storage_pointer"]).is_file()
                for row in bundle["derived_artifacts"])
+
+
+def test_dry_scan_job_policy_failure_records_blocked_without_completion(
+        db, tenant_a, tmp_path):
+    submission = create_submission(db, tenant_a, "raw_url", envelope={"url": "offline"})
+    job = create_job(db, tenant_a, submission["submission_id"], "raw_url")
+    (tmp_path / "jobs" / str(job["job_id"])).mkdir(parents=True)
+
+    with pytest.raises(ScanPolicyError, match="single-use"):
+        run_dry_scan_job(
+            db, tenant_uid=tenant_a, job_id=job["job_id"],
+            submission_id=submission["submission_id"], output_root=tmp_path / "jobs",
+        )
+
+    bundle = get_job_bundle(db, tenant_a, job["job_id"])
+    assert bundle["job"]["state"] == "blocked"
+    assert bundle["source_status"][0]["status"] == "blocked"
+    assert bundle["scan_events"][0]["outcome"] == "blocked"
+    assert bundle["derived_artifacts"] == []
+
+
+def test_dry_scan_job_storage_failure_records_failed_without_completion(
+        db, tenant_a, tmp_path):
+    submission = create_submission(db, tenant_a, "raw_url", envelope={"url": "offline"})
+    job = create_job(db, tenant_a, submission["submission_id"], "raw_url")
+
+    class _UnavailableStore:
+        @staticmethod
+        def put(*_args):
+            raise OSError("storage unavailable")
+
+    with pytest.raises(OSError, match="storage unavailable"):
+        run_dry_scan_job(
+            db, tenant_uid=tenant_a, job_id=job["job_id"],
+            submission_id=submission["submission_id"], output_root=tmp_path / "jobs",
+            artifact_store=_UnavailableStore(),
+        )
+
+    bundle = get_job_bundle(db, tenant_a, job["job_id"])
+    assert bundle["job"]["state"] == "failed"
+    assert bundle["source_status"][0]["status"] == "failed"
+    assert bundle["scan_events"][0]["outcome"] == "error"
+    assert bundle["derived_artifacts"] == []
 
 
 def test_scan_completion_is_tenant_scoped_and_storage_failure_is_safe(

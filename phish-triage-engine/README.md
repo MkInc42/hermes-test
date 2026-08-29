@@ -76,14 +76,17 @@ is intentionally single-use):
 ```bash
 rm -rf ./tmp/scan-proof # optional cleanup of this project-local demo output
 poetry run python -m pte scan-dry-run --output-root ./tmp/scan-proof
+# Equivalent: make scan-proof OUTPUT_ROOT=./tmp/scan-proof
 find ./tmp/scan-proof/dry-run-proof -maxdepth 1 -type f -print
 ```
 
 The `scan-dry-run` CLI is intentionally filesystem-only. Application code can
 use `run_dry_scan_job` for the DB-backed path: it advances an existing queued
 job through the scan lifecycle and atomically persists completion through an
-`ArtifactStore`. Execution or persistence errors propagate and leave the job
-in a nonterminal state; they never record a false completion.
+`ArtifactStore`. Execution or persistence errors propagate and never record a
+false completion. When the database remains available, policy failures
+atomically record a `blocked` job/source status and scan event, while
+execution/storage failures record `failed` status and events.
 
 It writes a PNG screenshot, DOM snapshot, empty HAR, redirect-chain metadata,
 and a manifest containing byte sizes, SHA-256 hashes, route provenance, and
@@ -97,6 +100,24 @@ Preflight DNS validation alone cannot prevent rebinding when the browser later
 resolves an attacker-controlled hostname inside an unrestricted shared network
 namespace. Live commands will remain disabled until the runtime contract pins
 validated public addresses and independently blocks private egress.
+
+Operators can prepare and inspect the non-secret future runtime contract for a
+job UUID without starting a container:
+
+```bash
+PTE_SCANNER_WORKER_UID="$(id -u)" PTE_SCANNER_WORKER_GID="$(id -g)" \
+  make scanner-prepare JOB_ID=00000000-0000-4000-8000-000000000001 \
+  OUTPUT_ROOT=./tmp/scanner-jobs
+```
+
+The command creates one new mode-`0700` directory for that job and prints a
+JSON contract. Reusing the job ID fails because output directories are
+single-use. Container names are deterministic (`pte-scan-` plus the UUID hex),
+so timeout cleanup always targets the exact per-job container. The contract
+contains `network_mode: service:pia-vpn`, bounded stop/kill settings, and the
+two missing live gates; it never runs Docker. `.env.example` lists only
+non-secret policy settings. VPN credentials belong in the separately operated
+PIA sidecar's secret store and must not be passed to this process.
 
 ## One-shot OSINT enrichment worker
 

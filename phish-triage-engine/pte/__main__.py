@@ -6,11 +6,12 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 from .db import DbConfig, apply_migrations, migration_status
-from .scanner import create_job_output_dir, run_dry_scan
+from .scanner import ScannerConfig, create_job_output_dir, run_dry_scan, runtime_contract
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,6 +25,18 @@ def main(argv: list[str] | None = None) -> int:
         output = create_job_output_dir(Path(argv[2]).resolve(), "dry-run-proof")
         result = run_dry_scan("https://example.invalid/benign", output)
         print(f"created {len(result.artifacts)} offline artifacts in {output}")
+        return 0
+    if cmd == "scanner-prepare":
+        if len(argv) != 5 or argv[1] != "--job-id" or argv[3] != "--output-root":
+            print("usage: python -m pte scanner-prepare --job-id UUID "
+                  "--output-root DIRECTORY", file=sys.stderr)
+            return 2
+        config = ScannerConfig.from_env()
+        output = create_job_output_dir(
+            Path(argv[4]).resolve(), argv[2], worker_uid=config.worker_uid,
+            worker_gid=config.worker_gid,
+        )
+        print(json.dumps(runtime_contract(config, argv[2], output), sort_keys=True))
         return 0
     cfg = DbConfig.from_env()
     if cmd == "migrate":

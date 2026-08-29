@@ -1,4 +1,4 @@
-.PHONY: dev-up migrate test run-api enrich-fixture
+.PHONY: dev-up migrate test run-api enrich-fixture scan-proof scanner-prepare
 
 dev-up:
 	docker compose up -d --wait db
@@ -16,3 +16,10 @@ run-api:
 # Usage: make enrich-fixture TENANT_UID=cust_EXAMPLE JOB_ID=<uuid>
 enrich-fixture:
 	poetry run pte-enrich --tenant-uid "$(TENANT_UID)" --job-id "$(JOB_ID)" --fixture
+
+scan-proof:
+	poetry run python -m pte scan-dry-run --output-root "$(OUTPUT_ROOT)"
+
+# Usage: make scanner-prepare JOB_ID=<uuid> OUTPUT_ROOT=./tmp/scanner-jobs
+scanner-prepare:
+	poetry run python -m pte scanner-prepare --job-id "$(JOB_ID)" --output-root "$(OUTPUT_ROOT)"

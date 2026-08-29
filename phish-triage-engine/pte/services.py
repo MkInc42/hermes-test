@@ -663,6 +663,81 @@ def persist_scan_completion(
         return {"artifacts": rows, "event": event, "state": "completed"}
 
 
+def persist_scan_failure(
+    cfg: DbConfig,
+    *,
+    tenant_uid: str,
+    job_id: uuid.UUID | str,
+    submission_id: uuid.UUID | str,
+    status: str,
+    reason_code: str,
+    route_label: str,
+    actor: str = "scanner-runner",
+) -> dict[str, Any]:
+    """Atomically persist a terminal scanner failure under the job's tenant.
+
+    Failure details are deliberately constrained to an operator-safe reason
+    code. Exception strings can contain URLs, subprocess output, or secrets and
+    therefore must not be copied into durable events.
+    """
+    tenant_uid = require_tenant(tenant_uid)
+    if status not in {"blocked", "failed"}:
+        raise ValidationError("scanner failure status must be blocked or failed")
+    if route_label not in {"direct-dev", "pia-sidecar-required", "blocked-no-route"}:
+        raise ValidationError("scanner failure requires an approved route label")
+    if (not isinstance(reason_code, str) or not reason_code
+            or len(reason_code) > 80
+            or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-"
+                   for character in reason_code)):
+        raise ValidationError("scanner reason_code must be a conservative identifier")
+    detail = {"reason_code": reason_code, "terminal_status": status}
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT state,source_type FROM jobs WHERE job_id=%s AND tenant_uid=%s"
+            " AND submission_id=%s FOR UPDATE",
+            (job_id, tenant_uid, submission_id),
+        )
+        job = cur.fetchone()
+        if job is None:
+            raise CrossTenantAccessError(
+                f"job {job_id} and submission {submission_id} are not linked"
+            )
+        if job["state"] in {"completed", "blocked", "failed", "expired"}:
+            raise ValidationError("scanner failure requires a nonterminal job")
+        cur.execute(
+            "UPDATE jobs SET state=%s,finished_at=now()"
+            " WHERE job_id=%s AND tenant_uid=%s",
+            (status, job_id, tenant_uid),
+        )
+        cur.execute(
+            """INSERT INTO scan_events
+               (tenant_uid,job_id,event_type,actor,route_label,outcome,detail)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)
+               RETURNING event_id,event_type,outcome,occurred_at""",
+            (tenant_uid, job_id, f"scan_{status}", actor, route_label,
+             status if status == "blocked" else "error", json.dumps(detail)),
+        )
+        event = dict(cur.fetchone())
+        cur.execute(
+            """INSERT INTO source_status
+               (tenant_uid,job_id,source_type,status,status_detail)
+               VALUES (%s,%s,%s,%s,%s)
+               ON CONFLICT (tenant_uid,job_id,source_type)
+               DO UPDATE SET status=EXCLUDED.status,
+                             status_detail=EXCLUDED.status_detail,updated_at=now()""",
+            (tenant_uid, job_id, job["source_type"], status, json.dumps(detail)),
+        )
+        cur.execute(
+            """INSERT INTO audit_events
+               (tenant_uid,job_id,actor,action,outcome,detail)
+               VALUES (%s,%s,%s,%s,%s,%s)""",
+            (tenant_uid, job_id, actor, f"job_state:{status}",
+             "denied" if status == "blocked" else "error", json.dumps(detail)),
+        )
+        conn.commit()
+        return {"event": event, "state": status}
+
+
 def add_enrichment_observation(
     cfg: DbConfig,
     tenant_uid: str,

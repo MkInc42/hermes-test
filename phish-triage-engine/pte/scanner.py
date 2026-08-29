@@ -29,6 +29,7 @@ from .services import (
     ValidationError,
     get_job_bundle,
     persist_scan_completion,
+    persist_scan_failure,
     set_job_state,
 )
 
@@ -91,11 +92,37 @@ class ScannerConfig:
     worker_uid: int = 65532
     worker_gid: int = 65532
 
+    @classmethod
+    def from_env(cls, prefix: str = "PTE_SCANNER_") -> "ScannerConfig":
+        """Load only non-secret operator policy from the environment."""
+        ports_text = os.environ.get(f"{prefix}ALLOWED_PORTS", "")
+        try:
+            ports = frozenset(int(value) for value in ports_text.split(",") if value)
+            return cls(
+                image=os.environ.get(f"{prefix}IMAGE", cls.image),
+                route_mode=RouteMode(os.environ.get(f"{prefix}ROUTE_MODE", cls.route_mode)),
+                pia_service=os.environ.get(f"{prefix}PIA_SERVICE", cls.pia_service),
+                timeout_seconds=float(os.environ.get(f"{prefix}TIMEOUT_SECONDS",
+                                                     cls.timeout_seconds)),
+                kill_grace_seconds=float(os.environ.get(f"{prefix}KILL_GRACE_SECONDS",
+                                                        cls.kill_grace_seconds)),
+                allowed_non_default_ports=ports,
+                download_policy=DownloadPolicy(os.environ.get(
+                    f"{prefix}DOWNLOAD_POLICY", cls.download_policy
+                )),
+                docker_binary=os.environ.get(f"{prefix}DOCKER_BINARY", cls.docker_binary),
+                worker_uid=int(os.environ.get(f"{prefix}WORKER_UID", cls.worker_uid)),
+                worker_gid=int(os.environ.get(f"{prefix}WORKER_GID", cls.worker_gid)),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ScanPolicyError("invalid scanner environment configuration") from exc
+
     def __post_init__(self) -> None:
         if self.timeout_seconds <= 0 or self.kill_grace_seconds < 0:
             raise ScanPolicyError("worker timeouts must be positive")
-        if not self.image.strip() or not self.pia_service.strip():
-            raise ScanPolicyError("container image and PIA service are required")
+        if (not self.image.strip() or not self.pia_service.strip()
+                or not self.docker_binary.strip()):
+            raise ScanPolicyError("container image, PIA service, and Docker binary are required")
         if any(port < 1 or port > 65535 for port in self.allowed_non_default_ports):
             raise ScanPolicyError("allowlisted ports must be within 1..65535")
         for label, value in (("worker_uid", self.worker_uid), ("worker_gid", self.worker_gid)):
@@ -146,6 +173,59 @@ _BLOCKED_HOSTNAMES = frozenset({
     "instance-data", "localhost", "metadata", "metadata.google.internal",
 })
 _DOCKER_CLEANUP_TIMEOUT_SECONDS = 5.0
+
+
+def container_name(job_id: str | uuid.UUID) -> str:
+    """Return a deterministic Docker-safe name unique to a persisted job."""
+    try:
+        canonical = uuid.UUID(str(job_id)).hex
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise ScanPolicyError("live scanner job_id must be a UUID") from exc
+    return f"pte-scan-{canonical}"
+
+
+def runtime_contract(config: ScannerConfig, job_id: str | uuid.UUID,
+                     output_dir: Path) -> dict[str, object]:
+    """Describe the future worker boundary without constructing a live command."""
+    if config.route_mode is not RouteMode.PIA_SIDECAR:
+        raise ScanPolicyError("operator runtime contract requires route_mode=pia-sidecar")
+    name = container_name(job_id)
+    # container_name performs the public fail-closed UUID validation first.
+    canonical_job_id = str(uuid.UUID(hex=name.removeprefix("pte-scan-")))
+    if not output_dir.is_absolute() or not output_dir.is_dir():
+        raise ScanPolicyError("runtime contract requires an existing absolute output directory")
+    try:
+        resolved_output = output_dir.resolve(strict=True)
+    except OSError as exc:
+        raise ScanPolicyError("runtime output directory could not be resolved safely") from exc
+    if output_dir != resolved_output or output_dir.name != canonical_job_id:
+        raise ScanPolicyError(
+            "runtime output must be a canonical, non-symlink directory named for the job UUID"
+        )
+    metadata = output_dir.stat()
+    if ((metadata.st_uid, metadata.st_gid) != (config.worker_uid, config.worker_gid)
+            or metadata.st_mode & 0o777 != 0o700):
+        raise ScanPolicyError("runtime output must be mode 0700 and owned by worker UID/GID")
+    return {
+        "schema_version": 1,
+        "job_id": canonical_job_id,
+        "container_name": name,
+        "image": config.image,
+        "output_dir": str(output_dir),
+        "single_use_output": True,
+        "worker_uid": config.worker_uid,
+        "worker_gid": config.worker_gid,
+        "timeout_seconds": config.timeout_seconds,
+        "kill_grace_seconds": config.kill_grace_seconds,
+        "cleanup_timeout_seconds": _DOCKER_CLEANUP_TIMEOUT_SECONDS,
+        "network_mode": f"service:{config.pia_service}",
+        "route_mode": config.route_mode.value,
+        "live_enabled": False,
+        "required_before_live": [
+            "pinned-public-address-navigation",
+            "namespace-private-egress-blocking",
+        ],
+    }
 
 
 def _address_is_blocked(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -299,6 +379,12 @@ def build_container_command(config: ScannerConfig, target: ValidatedTarget,
         raise ScanPolicyError("live container jobs require route_mode=pia-sidecar")
     if not output_dir.is_absolute() or not output_dir.is_dir():
         raise ScanPolicyError("an existing absolute per-job output directory is required")
+    try:
+        resolved_output = output_dir.resolve(strict=True)
+    except OSError as exc:
+        raise ScanPolicyError("job output directory could not be resolved safely") from exc
+    if output_dir != resolved_output:
+        raise ScanPolicyError("job output directory must be canonical and contain no symlinks")
     metadata = output_dir.stat()
     if ((metadata.st_uid, metadata.st_gid) != (config.worker_uid, config.worker_gid)
             or metadata.st_mode & 0o777 != 0o700):
@@ -497,27 +583,41 @@ def run_dry_scan_job(
         raise ValidationError("dry scan job requires a queued job")
     if job["submission_id"] != uuid.UUID(str(submission_id)):
         raise ValidationError("dry scan job submission does not match the job")
-    output_dir = create_job_output_dir(output_root, job_id)
-    for state in ("normalizing", "policy_checked", "scanning"):
-        set_job_state(cfg, tenant_uid, job_id, state, actor=actor)
-    result = run_dry_scan("https://example.invalid/benign", output_dir)
-    store = artifact_store or ArtifactStore()
-    completion = persist_scan_completion(
-        cfg,
-        tenant_uid=tenant_uid,
-        job_id=job_id,
-        submission_id=submission_id,
-        route_label=result.route_label,
-        policy=result.policy,
-        artifacts=[
-            {
-                "derived_kind": item.derived_kind,
-                "media_type": item.media_type,
-                "data": item.data,
-            }
-            for item in result.artifacts
-        ],
-        storage_writer=store.put,
-        actor=actor,
-    )
+    try:
+        output_dir = create_job_output_dir(output_root, job_id)
+        for state in ("normalizing", "policy_checked", "scanning"):
+            set_job_state(cfg, tenant_uid, job_id, state, actor=actor)
+        result = run_dry_scan("https://example.invalid/benign", output_dir)
+        store = artifact_store or ArtifactStore()
+        completion = persist_scan_completion(
+            cfg,
+            tenant_uid=tenant_uid,
+            job_id=job_id,
+            submission_id=submission_id,
+            route_label=result.route_label,
+            policy=result.policy,
+            artifacts=[
+                {
+                    "derived_kind": item.derived_kind,
+                    "media_type": item.media_type,
+                    "data": item.data,
+                }
+                for item in result.artifacts
+            ],
+            storage_writer=store.put,
+            actor=actor,
+        )
+    except Exception as exc:
+        status = "blocked" if isinstance(exc, ScanPolicyError) else "failed"
+        reason = "scanner_policy_blocked" if status == "blocked" else "scanner_execution_failed"
+        try:
+            persist_scan_failure(
+                cfg, tenant_uid=tenant_uid, job_id=job_id,
+                submission_id=submission_id, status=status, reason_code=reason,
+                route_label="blocked-no-route" if status == "blocked" else "direct-dev",
+                actor=actor,
+            )
+        except Exception as persistence_exc:
+            exc.add_note(f"scanner failure persistence also failed: {type(persistence_exc).__name__}")
+        raise
     return {"result": result, "completion": completion}

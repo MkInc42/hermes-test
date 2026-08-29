@@ -79,6 +79,9 @@ h2 { font-size: clamp(1.3rem, 4vw, 1.7rem); line-height: 1.2; }
 .intake-form { margin-top: 1.3rem; }
 .shared-fields, .field, .mode-choice, .attestations { margin-top: 1.25rem; }
 .field input, .field textarea, .settings-body input { width: 100%; border: 1px solid var(--border-strong); border-radius: .25rem; padding: .75rem; background: #061015; color: var(--text); }
+.field input[type="file"] { padding: .55rem; }
+.optional { color: var(--muted); font-size: .75rem; font-weight: 500; }
+.optional-grid { display: grid; gap: 0 1rem; }
 textarea { resize: vertical; min-height: 7rem; }
 input:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible, label:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
 .help, .field-status, .gate-note { color: var(--muted); font-size: .82rem; margin: .4rem 0 0; }
@@ -115,6 +118,7 @@ legend { font-weight: 800; margin-bottom: .55rem; }
   .inline-control input { flex: 1; }
   .section-heading, .tab-panel, .result-card { padding: 1.6rem; }
   .mode-choice { grid-template-columns: 1fr 1fr; }
+  .optional-grid { grid-template-columns: repeat(3, 1fr); }
   .button.primary { width: auto; min-width: 13rem; }
 }
 

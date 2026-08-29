@@ -3,10 +3,25 @@
 
   var DEFAULT_API = "http://127.0.0.1:8000";
   var EMAIL_LIMIT = 10 * 1024 * 1024;
+  var SCREENSHOT_LIMIT = 15 * 1024 * 1024;
   var apiInput = document.getElementById("api-base");
   var apiStatus = document.getElementById("api-status");
   var result = document.getElementById("result");
-  var forms = [document.getElementById("upload-form"), document.getElementById("paste-form")];
+  var forms = Array.prototype.slice.call(document.querySelectorAll(".intake-form"));
+  var routes = {
+    "upload-form": "/v1/intake/email/upload",
+    "paste-form": "/v1/intake/email/paste",
+    "url-form": "/v1/intake/url",
+    "ocr-form": "/v1/intake/ocr",
+    "screenshot-form": "/v1/intake/screenshot"
+  };
+  var buttonLabels = {
+    "upload-form": "Submit email file",
+    "paste-form": "Submit pasted email",
+    "url-form": "Submit URL",
+    "ocr-form": "Submit OCR text",
+    "screenshot-form": "Submit screenshot"
+  };
 
   function normalizedApiBase(value) {
     var url = new URL(value);
@@ -20,8 +35,7 @@
   }
 
   function updateActions(base) {
-    forms[0].action = base + "/v1/intake/email/upload";
-    forms[1].action = base + "/v1/intake/email/paste";
+    forms.forEach(function (form) { form.action = base + routes[form.id]; });
   }
 
   try {
@@ -49,7 +63,7 @@
   tabs.forEach(function (tab) {
     tab.addEventListener("click", function () { activateTab(tab); });
     tab.addEventListener("keydown", function (event) {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") return;
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
       var index = tabs.indexOf(tab);
       if (event.key === "ArrowRight") index = (index + 1) % tabs.length;
@@ -71,11 +85,18 @@
     });
   }
 
+  var uploadForm = document.getElementById("upload-form");
+  var pasteForm = document.getElementById("paste-form");
+  var urlForm = document.getElementById("url-form");
+  var ocrForm = document.getElementById("ocr-form");
+  var screenshotForm = document.getElementById("screenshot-form");
   var fileInput = document.getElementById("email-file");
   var dropZone = document.getElementById("drop-zone");
   var fileFeedback = document.getElementById("file-feedback");
+  var screenshotInput = document.getElementById("screenshot-file");
+  var screenshotFeedback = document.getElementById("screenshot-feedback");
 
-  function validateFile(file) {
+  function validateEmailFile(file) {
     if (!file) return "Choose an .eml or .msg file.";
     var extension = file.name.toLowerCase().split(".").pop();
     if (extension !== "eml" && extension !== "msg") return "Unsupported file type. Choose an .eml or .msg file.";
@@ -83,8 +104,8 @@
     return "";
   }
 
-  function showFile(file) {
-    var error = validateFile(file);
+  function showEmailFile(file) {
+    var error = validateEmailFile(file);
     fileInput.setCustomValidity(error);
     fileFeedback.classList.toggle("error", Boolean(error));
     if (error) {
@@ -95,7 +116,22 @@
       fileFeedback.textContent = "Selected: " + file.name + " (" + formatBytes(file.size) + ")" + typeNote;
       dropZone.classList.add("has-file");
     }
-    syncGate(forms[0]);
+  }
+
+  function validateScreenshotFile(file) {
+    if (!file) return "Choose a PNG, JPEG, WebP, or PDF file.";
+    var extension = "." + file.name.toLowerCase().split(".").pop();
+    var types = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".pdf": "application/pdf" };
+    if (!types[extension] || file.type !== types[extension]) return "File type and extension must match PNG, JPEG, WebP, or PDF.";
+    if (file.size > SCREENSHOT_LIMIT) return "This file exceeds the 15 MiB screenshot limit.";
+    return "";
+  }
+
+  function showScreenshotFile(file) {
+    var error = validateScreenshotFile(file);
+    screenshotInput.setCustomValidity(error);
+    screenshotFeedback.classList.toggle("error", Boolean(error));
+    screenshotFeedback.textContent = error || "Selected: " + file.name + " (" + formatBytes(file.size) + ") — ready to submit";
   }
 
   function formatBytes(bytes) {
@@ -104,7 +140,8 @@
     return (bytes / (1024 * 1024)).toFixed(1) + " MiB";
   }
 
-  fileInput.addEventListener("change", function () { showFile(fileInput.files[0]); });
+  fileInput.addEventListener("change", function () { showEmailFile(fileInput.files[0]); });
+  screenshotInput.addEventListener("change", function () { showScreenshotFile(screenshotInput.files[0]); });
   ["dragenter", "dragover"].forEach(function (name) {
     dropZone.addEventListener(name, function (event) { event.preventDefault(); dropZone.classList.add("is-dragging"); fileFeedback.textContent = "Release to select this file."; });
   });
@@ -114,7 +151,7 @@
   dropZone.addEventListener("drop", function (event) {
     if (!event.dataTransfer.files.length) return;
     try { fileInput.files = event.dataTransfer.files; } catch (_error) { /* Older browsers can still use the chooser. */ }
-    showFile(event.dataTransfer.files[0]);
+    showEmailFile(event.dataTransfer.files[0]);
   });
 
   var modeInputs = document.querySelectorAll('input[name="mode"]');
@@ -122,16 +159,15 @@
   var headersInput = document.getElementById("raw-headers");
   modeInputs.forEach(function (input) {
     input.addEventListener("change", function () {
-      var full = input.value === "headers_body" && input.checked;
       if (!input.checked) return;
+      var full = input.value === "headers_body";
       headersField.hidden = !full;
       headersInput.required = full;
-      syncGate(forms[1]);
     });
   });
 
   function attestationsComplete(form) {
-    return form.querySelector('[name="authorization_attested"]').checked && form.querySelector('[name="no_credentials_acknowledged"]').checked;
+    return form.elements.authorization_attested.checked && form.elements.no_credentials_acknowledged.checked;
   }
 
   function syncGate(form) {
@@ -146,52 +182,66 @@
     form.addEventListener("submit", submitForm);
   });
 
+  function validateRoute(form) {
+    if (form === uploadForm) showEmailFile(fileInput.files[0]);
+    if (form === screenshotForm) {
+      showScreenshotFile(screenshotInput.files[0]);
+      var optionalOcr = form.elements.ocr_text;
+      optionalOcr.setCustomValidity(optionalOcr.value && !optionalOcr.value.trim() ? "Optional OCR text cannot contain only whitespace." : "");
+    }
+    if (form === urlForm) {
+      var input = form.elements.url;
+      try {
+        var parsed = new URL(input.value);
+        input.setCustomValidity(parsed.protocol === "http:" || parsed.protocol === "https:" ? "" : "Use an HTTP or HTTPS URL.");
+      } catch (_error) { input.setCustomValidity("Enter a valid absolute URL."); }
+    }
+    if (form === pasteForm) {
+      var bytes = new TextEncoder().encode((headersInput.value || "") + "\r\n\r\n" + form.elements.body.value).length;
+      if (bytes > EMAIL_LIMIT) { showError("The pasted email exceeds the 10 MiB limit. Nothing was submitted."); return false; }
+    }
+    return form.reportValidity();
+  }
+
+  function jsonBody(form) {
+    var common = {
+      tenant_uid: form.elements.tenant_uid.value.trim(),
+      authorization_attested: true,
+      no_credentials_acknowledged: true
+    };
+    if (form === pasteForm) return Object.assign(common, { mode: form.elements.mode.value, raw_headers: form.elements.mode.value === "headers_body" ? headersInput.value : null, body: form.elements.body.value });
+    if (form === urlForm) return Object.assign(common, { url: form.elements.url.value });
+    var confidence = form.elements.confidence.value;
+    return Object.assign(common, { ocr_text: form.elements.ocr_text.value, platform: form.elements.platform.value.trim() || null, engine: form.elements.engine.value.trim() || null, confidence: confidence === "" ? null : Number(confidence) });
+  }
+
   async function submitForm(event) {
     event.preventDefault();
     var form = event.currentTarget;
-    if (!attestationsComplete(form)) {
-      showError("Confirm both required attestations before submitting.");
-      return;
-    }
-    if (form === forms[0]) showFile(fileInput.files[0]);
-    if (!form.reportValidity()) return;
-    if (form === forms[1]) {
-      var bytes = new TextEncoder().encode((headersInput.value || "") + "\r\n\r\n" + document.getElementById("email-body").value).length;
-      if (bytes > EMAIL_LIMIT) { showError("The pasted email exceeds the 10 MiB limit. Nothing was submitted."); return; }
-    }
-
+    if (!attestationsComplete(form)) { showError("Confirm both required attestations before submitting."); return; }
+    if (!validateRoute(form)) return;
     var button = form.querySelector(".submit-button");
     button.disabled = true;
     button.textContent = "Submitting…";
     result.innerHTML = "<p>Submitting evidence to the configured API…</p>";
     result.scrollIntoView({ behavior: "smooth", block: "nearest" });
-
     try {
+      var multipart = form === uploadForm || form === screenshotForm;
       var options = { method: "POST", headers: { "Accept": "application/json" } };
-      if (form === forms[0]) {
-        options.body = new FormData(form);
-      } else {
-        options.headers["Content-Type"] = "application/json";
-        options.body = JSON.stringify({
-          tenant_uid: form.elements.tenant_uid.value.trim(),
-          authorization_attested: true,
-          no_credentials_acknowledged: true,
-          mode: form.elements.mode.value,
-          raw_headers: form.elements.mode.value === "headers_body" ? headersInput.value : null,
-          body: form.elements.body.value
-        });
-      }
+      if (multipart) options.body = new FormData(form);
+      else { options.headers["Content-Type"] = "application/json"; options.body = JSON.stringify(jsonBody(form)); }
       var response = await fetch(form.action, options);
       var payload = await safeJson(response);
-      if (!response.ok) throw new Error(safeErrorMessage(response.status, payload));
+      if (!response.ok) throw new Error(safeErrorMessage(response.status));
       showSuccess(payload);
       form.reset();
-      if (form === forms[0]) { dropZone.classList.remove("has-file"); fileFeedback.textContent = ""; }
-      if (form === forms[1]) { headersField.hidden = false; headersInput.required = true; }
+      if (form === uploadForm) { dropZone.classList.remove("has-file"); fileFeedback.textContent = ""; }
+      if (form === screenshotForm) screenshotFeedback.textContent = "";
+      if (form === pasteForm) { headersField.hidden = false; headersInput.required = true; }
     } catch (error) {
       showError(error.message || "Submission failed. No sensitive response content is displayed.");
     } finally {
-      button.textContent = form === forms[0] ? "Submit email file" : "Submit pasted email";
+      button.textContent = buttonLabels[form.id];
       syncGate(form);
     }
   }
@@ -202,17 +252,9 @@
     try { return await response.json(); } catch (_error) { return null; }
   }
 
-  function safeErrorMessage(status, payload) {
-    var generic = {
-      400: "The request was rejected. Confirm both attestations and try again.",
-      404: "The tenant or intake endpoint was not found.",
-      409: "The intake could not be persisted. Try again or contact an administrator.",
-      413: "The evidence exceeds the allowed size limit.",
-      422: "The evidence or request fields did not pass validation.",
-      503: "The intake service is temporarily unavailable."
-    }[status];
-    if (generic) return generic + " Nothing from the submitted evidence is shown.";
-    return "Submission failed (HTTP " + status + "). Nothing from the submitted evidence is shown.";
+  function safeErrorMessage(status) {
+    var generic = { 400: "The request was rejected. Confirm both attestations and try again.", 404: "The tenant or intake endpoint was not found.", 409: "The intake could not be persisted. Try again or contact an administrator.", 413: "The evidence exceeds the allowed size limit.", 422: "The evidence or request fields did not pass validation.", 503: "The intake service is temporarily unavailable." }[status];
+    return (generic || "Submission failed (HTTP " + status + ").") + " Nothing from the submitted evidence or API response is shown.";
   }
 
   function safeValue(value) {
@@ -221,16 +263,10 @@
 
   function showSuccess(payload) {
     result.replaceChildren();
-    var heading = document.createElement("p");
-    heading.className = "result-success";
-    heading.textContent = "Evidence accepted";
-    result.appendChild(heading);
-    var note = document.createElement("p");
-    note.textContent = "Only safe intake metadata is shown. Submitted content is never displayed here.";
-    result.appendChild(note);
-    var list = document.createElement("dl");
-    list.className = "metadata";
-    [["Job ID", payload && payload.job_id], ["Submission ID", payload && payload.submission_id], ["Source type", payload && payload.source_type], ["Fidelity", payload && payload.fidelity]].forEach(function (item) {
+    var heading = document.createElement("p"); heading.className = "result-success"; heading.textContent = "Evidence accepted"; result.appendChild(heading);
+    var note = document.createElement("p"); note.textContent = "Only safe intake metadata is shown. Submitted content and other response fields are never displayed here."; result.appendChild(note);
+    var list = document.createElement("dl"); list.className = "metadata";
+    [["Job ID", payload && payload.job_id], ["Submission ID", payload && payload.submission_id], ["Source type", payload && payload.source_type], ["Fidelity", payload && payload.fidelity], ["State", payload && payload.state]].forEach(function (item) {
       var dt = document.createElement("dt"); dt.textContent = item[0];
       var dd = document.createElement("dd"); dd.textContent = safeValue(item[1]);
       list.appendChild(dt); list.appendChild(dd);
@@ -240,13 +276,9 @@
 
   function showError(message) {
     result.replaceChildren();
-    var heading = document.createElement("p");
-    heading.className = "result-error";
-    heading.textContent = "Submission not accepted";
-    var note = document.createElement("p");
-    note.textContent = message;
-    result.appendChild(heading);
-    result.appendChild(note);
+    var heading = document.createElement("p"); heading.className = "result-error"; heading.textContent = "Submission not accepted";
+    var note = document.createElement("p"); note.textContent = message;
+    result.appendChild(heading); result.appendChild(note);
     result.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 }());

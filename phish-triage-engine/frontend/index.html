@@ -54,9 +54,10 @@
       <div class="tabs" role="tablist" aria-label="Evidence method">
         <button id="tab-upload" class="tab" type="button" role="tab" aria-selected="true" aria-controls="panel-upload">Email file</button>
         <button id="tab-paste" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-paste" tabindex="-1">Paste email</button>
-        <button id="tab-screenshot" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-screenshot" tabindex="-1" disabled aria-disabled="true">Screenshot / OCR <span>Coming soon</span></button>
+        <button id="tab-url" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-url" tabindex="-1">URL</button>
+        <button id="tab-ocr" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-ocr" tabindex="-1">OCR text</button>
+        <button id="tab-screenshot" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-screenshot" tabindex="-1">Screenshot</button>
       </div>
-      <p class="future-note">Screenshot and OCR intake is not available in this client. The existing OCR API route is future-ready and will remain disabled here until the review workflow is ready.</p>
 
       <section id="panel-upload" class="tab-panel" role="tabpanel" aria-labelledby="tab-upload">
         <div class="guidance important">
@@ -127,10 +128,36 @@
         </form>
       </section>
 
-      <section id="panel-screenshot" class="tab-panel unavailable" role="tabpanel" aria-labelledby="tab-screenshot" hidden>
-        <p class="status-label">Coming soon</p>
-        <h3>Screenshot and OCR intake</h3>
-        <p>The API already includes future-ready OCR and screenshot routes, with a 15 MiB screenshot limit. This client keeps them disabled until the review workflow is ready; no screenshot or OCR submission is available here.</p>
+      <section id="panel-url" class="tab-panel" role="tabpanel" aria-labelledby="tab-url" hidden>
+        <div class="guidance"><strong>URLs are stored, never fetched.</strong><p>Submit one absolute HTTP or HTTPS URL. Usernames and passwords in URLs are not allowed.</p></div>
+        <form id="url-form" class="intake-form" action="http://127.0.0.1:8000/v1/intake/url" method="post">
+          <div class="field"><label for="url-tenant">Tenant UID <span aria-hidden="true">*</span></label><input id="url-tenant" name="tenant_uid" type="text" maxlength="255" autocomplete="organization" required></div>
+          <div class="field"><label for="evidence-url">Evidence URL <span aria-hidden="true">*</span></label><input id="evidence-url" name="url" type="url" maxlength="4096" inputmode="url" spellcheck="false" placeholder="https://example.invalid/path" required aria-describedby="url-help"><p id="url-help" class="help">HTTP or HTTPS only · Maximum 4,096 characters · No credentials or user information</p></div>
+          <fieldset class="attestations"><legend>Required attestations</legend><label class="check-row"><input name="authorization_attested" type="checkbox" value="true" required><span><strong>I am authorized to submit this evidence.</strong><small>I have permission to provide this material for analysis.</small></span></label><label class="check-row"><input name="no_credentials_acknowledged" type="checkbox" value="true" required><span><strong>I confirm no credentials are included.</strong><small>I removed passwords, tokens, secrets, recovery codes, and private keys.</small></span></label></fieldset>
+          <button class="button primary submit-button" type="submit">Submit URL</button><p class="gate-note">Both attestations are required before submission.</p>
+        </form>
+      </section>
+
+      <section id="panel-ocr" class="tab-panel" role="tabpanel" aria-labelledby="tab-ocr" hidden>
+        <div class="guidance warning"><strong>OCR text is partial, unverified evidence.</strong><p>Transcription errors are possible. Review the text and remove all credentials before submission.</p></div>
+        <form id="ocr-form" class="intake-form" action="http://127.0.0.1:8000/v1/intake/ocr" method="post">
+          <div class="field"><label for="ocr-tenant">Tenant UID <span aria-hidden="true">*</span></label><input id="ocr-tenant" name="tenant_uid" type="text" maxlength="255" autocomplete="organization" required></div>
+          <div class="field"><label for="ocr-text">OCR text <span aria-hidden="true">*</span></label><textarea id="ocr-text" name="ocr_text" rows="12" maxlength="100000" required aria-describedby="ocr-help"></textarea><p id="ocr-help" class="help">Maximum 100,000 characters.</p></div>
+          <div class="optional-grid"><div class="field"><label for="ocr-platform">Platform <span class="optional">Optional</span></label><input id="ocr-platform" name="platform" type="text" maxlength="100"></div><div class="field"><label for="ocr-engine">OCR engine <span class="optional">Optional</span></label><input id="ocr-engine" name="engine" type="text" maxlength="100"></div><div class="field"><label for="ocr-confidence">Confidence <span class="optional">Optional</span></label><input id="ocr-confidence" name="confidence" type="number" min="0" max="1" step="any" inputmode="decimal" aria-describedby="confidence-help"><p id="confidence-help" class="help">A value from 0 to 1.</p></div></div>
+          <fieldset class="attestations"><legend>Required attestations</legend><label class="check-row"><input name="authorization_attested" type="checkbox" value="true" required><span><strong>I am authorized to submit this evidence.</strong><small>I have permission to provide this material for analysis.</small></span></label><label class="check-row"><input name="no_credentials_acknowledged" type="checkbox" value="true" required><span><strong>I confirm no credentials are included.</strong><small>I removed passwords, tokens, secrets, recovery codes, and private keys.</small></span></label></fieldset>
+          <button class="button primary submit-button" type="submit">Submit OCR text</button><p class="gate-note">Both attestations are required before submission.</p>
+        </form>
+      </section>
+
+      <section id="panel-screenshot" class="tab-panel" role="tabpanel" aria-labelledby="tab-screenshot" hidden>
+        <div class="guidance"><strong>Screenshots are stored as inert evidence.</strong><p>PNG, JPEG, WebP, and PDF files are accepted. Optional OCR text is stored as a derived artifact.</p></div>
+        <form id="screenshot-form" class="intake-form" action="http://127.0.0.1:8000/v1/intake/screenshot" method="post" enctype="multipart/form-data">
+          <div class="field"><label for="screenshot-tenant">Tenant UID <span aria-hidden="true">*</span></label><input id="screenshot-tenant" name="tenant_uid" type="text" maxlength="255" autocomplete="organization" required></div>
+          <div class="field"><label for="screenshot-file">Screenshot or PDF <span aria-hidden="true">*</span></label><input id="screenshot-file" name="file" type="file" accept=".png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf" required aria-describedby="screenshot-help screenshot-feedback"><p id="screenshot-help" class="help">PNG, JPEG, WebP, or PDF · Maximum 15 MiB</p><p id="screenshot-feedback" class="field-status" role="status" aria-live="polite"></p></div>
+          <div class="field"><label for="screenshot-ocr">OCR text <span class="optional">Optional</span></label><textarea id="screenshot-ocr" name="ocr_text" rows="8" maxlength="100000" aria-describedby="screenshot-ocr-help"></textarea><p id="screenshot-ocr-help" class="help">If provided, must contain text · Maximum 100,000 characters.</p></div>
+          <fieldset class="attestations"><legend>Required attestations</legend><label class="check-row"><input name="authorization_attested" type="checkbox" value="true" required><span><strong>I am authorized to submit this evidence.</strong><small>I have permission to provide this material for analysis.</small></span></label><label class="check-row"><input name="no_credentials_acknowledged" type="checkbox" value="true" required><span><strong>I confirm no credentials are included.</strong><small>I removed passwords, tokens, secrets, recovery codes, and private keys.</small></span></label></fieldset>
+          <button class="button primary submit-button" type="submit">Submit screenshot</button><p class="gate-note">Both attestations are required before submission.</p>
+        </form>
       </section>
     </section>
 

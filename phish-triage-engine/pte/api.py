@@ -7,6 +7,7 @@ from typing import Annotated, Any
 # WHY: FastAPI supplies the validated HTTP boundary and multipart primitives.
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 # WHY: Pydantic enforces strict, declarative schemas before intake data is persisted.
 from pydantic import BaseModel, ConfigDict, Field, ValidationError as PydanticValidationError
@@ -54,6 +55,11 @@ class EmailPasteIntake(Attested):
 
 
 REQUEST_VALIDATION_DETAIL = "request validation failed"
+FRONTEND_ORIGINS = (
+    "http://127.0.0.1:8080",
+    "http://localhost:8080",
+    "http://[::1]:8080",
+)
 
 
 def _attested_from_form(tenant_uid: str, authorization_attested: bool,
@@ -113,6 +119,12 @@ def create_app(db_config: DbConfig | None = None, artifact_store: ArtifactStore 
         A configured FastAPI application.
     """
     app = FastAPI(title="Phish Triage Intake API", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=FRONTEND_ORIGINS,
+        allow_methods=["POST"],
+        allow_headers=["Accept", "Content-Type"],
+    )
     app.state.db_config = db_config or DbConfig.from_env()
     app.state.artifact_store = artifact_store or ArtifactStore()
 

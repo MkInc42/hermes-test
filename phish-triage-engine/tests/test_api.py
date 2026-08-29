@@ -13,6 +13,13 @@ from pte.artifacts import ArtifactStore
 from pte.db import connect
 
 
+FRONTEND_ORIGINS = (
+    "http://127.0.0.1:8080",
+    "http://localhost:8080",
+    "http://[::1]:8080",
+)
+
+
 @pytest.fixture()
 def client(db, tenant_a, tmp_path: Path):
     with TestClient(create_app(db, ArtifactStore(tmp_path / "artifacts"))) as test_client:
@@ -22,6 +29,32 @@ def client(db, tenant_a, tmp_path: Path):
 def attested(tenant_uid: str) -> dict:
     return {"tenant_uid": tenant_uid, "authorization_attested": True,
             "no_credentials_acknowledged": True}
+
+
+@pytest.mark.parametrize("origin", FRONTEND_ORIGINS)
+def test_intake_preflight_allows_documented_frontend_origins(client, origin):
+    response = client.options(
+        "/v1/intake/url",
+        headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    assert "POST" in response.headers["access-control-allow-methods"]
+    assert "content-type" in response.headers["access-control-allow-headers"].lower()
+
+
+@pytest.mark.parametrize("origin", ["http://127.0.0.1:8081", "https://example.test"])
+def test_intake_preflight_rejects_undocumented_origins(client, origin):
+    response = client.options(
+        "/v1/intake/url",
+        headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type"},
+    )
+
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
 
 
 def test_valid_url_normalizes_and_queues(client, db, tenant_a):

@@ -22,12 +22,7 @@
     "ocr-form": "Submit OCR text",
     "screenshot-form": "Submit screenshot"
   };
-
-  function normalizedApiBase(value) {
-    var url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Use an HTTP or HTTPS address.");
-    return url.href.replace(/\/$/, "");
-  }
+  var normalizedApiBase = window.PteApiBase.normalizedApiBase;
 
   function currentApiBase() {
     try { return normalizedApiBase(apiInput.value.trim()); }
@@ -41,7 +36,10 @@
   try {
     var storedApi = window.localStorage.getItem("pte-api-base");
     if (storedApi) apiInput.value = normalizedApiBase(storedApi);
-  } catch (_error) { /* Storage may be unavailable; the loopback default remains usable. */ }
+  } catch (_error) {
+    apiInput.value = DEFAULT_API;
+    try { window.localStorage.removeItem("pte-api-base"); } catch (_storageError) { /* Non-fatal. */ }
+  }
   updateActions(currentApiBase());
 
   document.getElementById("save-api-base").addEventListener("click", function () {

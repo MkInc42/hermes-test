@@ -26,10 +26,23 @@ poetry run uvicorn pte.api:app --host 127.0.0.1 --port 8000
 Frontend:
 
 ```sh
-python -m http.server 8080 --bind 127.0.0.1 --directory frontend
+python3 -m http.server 8080 --bind 127.0.0.1 --directory frontend
+# Or, when using the Poetry environment:
+poetry run python -m http.server 8080 --bind 127.0.0.1 --directory frontend
 ```
 
-Open the UI at <http://127.0.0.1:8080>. Confirm API/database readiness at <http://127.0.0.1:8000/health>; a ready service returns `{"status":"ok"}`. In the UI's **API connection** section, set **API base URL** to `http://127.0.0.1:8000` and select **Use this API**. The value is stored in browser local storage.
+This split-origin setup uses frontend port `8080` and API port `8000`. The API permits the static frontend origins `http://127.0.0.1:8080`, `http://localhost:8080`, and `http://[::1]:8080`; keep whichever host spelling you choose on port `8080`. Open the UI at <http://127.0.0.1:8080>. Confirm API/database readiness at <http://127.0.0.1:8000/health>; a ready service returns `{"status":"ok"}`. In the UI's **API connection** section, set **API base URL** to `http://127.0.0.1:8000` and select **Use address**. The value is stored in browser local storage. Only loopback HTTP(S) origins are accepted; credentials, paths, query strings, and fragments are rejected.
+
+To smoke-check the browser preflight directly, run:
+
+```sh
+curl --include --request OPTIONS http://127.0.0.1:8000/v1/intake/url \
+  --header 'Origin: http://127.0.0.1:8080' \
+  --header 'Access-Control-Request-Method: POST' \
+  --header 'Access-Control-Request-Headers: content-type'
+```
+
+A working response is `200 OK` and includes `access-control-allow-origin: http://127.0.0.1:8080`, `access-control-allow-methods: POST`, and an allowed `content-type` request header.
 
 Every intake requires an existing tenant UID plus both authorization and no-credentials attestations. Submit only evidence you are authorized to provide. Remove passwords, tokens, session values, recovery codes, private keys, and all other credentials before submission.
 

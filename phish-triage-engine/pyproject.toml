@@ -20,6 +20,7 @@ dev = [
 
 [project.scripts]
 pte-api = "pte.api:run"
+pte-enrich = "pte.enrichment_worker:main"
 
 [build-system]
 requires = ["poetry-core>=1.9"]

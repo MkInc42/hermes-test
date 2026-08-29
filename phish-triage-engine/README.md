@@ -5,11 +5,22 @@ Tenant-scoped Postgres persistence and a small FastAPI evidence-intake API. Inta
 ## Local setup
 
 ```bash
-poetry install --with dev
-docker compose up -d db
+poetry install --extras dev
+make dev-up
+make run-api
+```
+
+The equivalent exact Poetry commands are:
+
+```bash
+docker compose up -d --wait db
 poetry run python -m pte migrate
 PTE_ARTIFACT_ROOT=./artifacts poetry run uvicorn pte.api:app --host 127.0.0.1 --port 8000
+poetry run pytest
 ```
+
+`make run-api` and the explicit Uvicorn command bind only to loopback. Do not
+change the host to `0.0.0.0` for this internal development service.
 
 Database settings use `PTE_DB_HOST`, `PTE_DB_PORT`, `PTE_DB_NAME`, `PTE_DB_USER`, and `PTE_DB_PASSWORD`. Immutable evidence bytes are content-addressed beneath `PTE_ARTIFACT_ROOT`; API responses expose hashes and metadata, never filesystem paths or submitted, normalized, parsed-header, or OCR content. URL responses include only a normalization-applied flag and SHA-256 summary, while the normalized indicator remains tenant-scoped internally. Tenants must be provisioned separately before intake.
 
@@ -87,11 +98,58 @@ resolves an attacker-controlled hostname inside an unrestricted shared network
 namespace. Live commands will remain disabled until the runtime contract pins
 validated public addresses and independently blocks private egress.
 
-## OSINT enrichment worker contract
+## One-shot OSINT enrichment worker
+
+The worker always loads an existing `queued` job under an explicit tenant and
+persists its canonical enrichment artifact, normalized source observations,
+risk score, and source status to Postgres. It is not a JSON-only exporter.
+Safe/local mode uses the job's persisted URL indicator and performs no network
+I/O:
+
+```bash
+PTE_ARTIFACT_ROOT=./artifacts poetry run pte-enrich \
+  --tenant-uid cust_EXAMPLE --job-id JOB_UUID
+```
+
+The bundled FedEx fixture fills every provider slot without network access and
+is useful for an operator smoke test against a queued job:
+
+```bash
+PTE_ARTIFACT_ROOT=./artifacts poetry run pte-enrich \
+  --tenant-uid cust_EXAMPLE --job-id JOB_UUID --fixture
+# Equivalent: make enrich-fixture TENANT_UID=cust_EXAMPLE JOB_ID=JOB_UUID
+```
+
+DNS A/AAAA resolution is the sole live adapter and must be explicitly enabled.
+It is passive, has a bounded deadline, never connects to the resolved service,
+and normalizes timeout/unavailable conditions instead of raising them:
+
+```bash
+poetry run pte-enrich --tenant-uid cust_EXAMPLE --job-id JOB_UUID \
+  --enable-dns --dns-timeout 2
+```
+
+URLhaus, OTX, Google Safe Browsing, RDAP/WHOIS, ASN/hosting, and TLS/certificate
+transparency remain `unavailable` in safe/local mode. The worker does not call
+external reputation APIs or infer a benign verdict when credentials are absent.
+No active scanning, browser automation, credential submission, cron job, or
+public deployment is part of this entrypoint.
+
+Verify the persisted records directly with the same local database settings:
+
+```bash
+docker compose exec db psql -U pte -d phish_triage -c \
+  "SELECT source,status,observable_value FROM enrichment_observations WHERE tenant_uid='cust_EXAMPLE' AND job_id='JOB_UUID' ORDER BY source;"
+docker compose exec db psql -U pte -d phish_triage -c \
+  "SELECT classification,confidence,score FROM risk_scores WHERE tenant_uid='cust_EXAMPLE' AND job_id='JOB_UUID';"
+docker compose exec db psql -U pte -d phish_triage -c \
+  "SELECT source_type,status,status_detail FROM source_status WHERE tenant_uid='cust_EXAMPLE' AND job_id='JOB_UUID';"
+```
+
+### Enrichment contract
 
 `pte.enrichment` defines the deterministic backend contract for passive OSINT
-enrichment and evidence-based risk scoring. The worker performs no live network
-I/O itself; provider clients will later populate the same source slots. Current
+enrichment and evidence-based risk scoring. Current
 source outputs are fixed by schema version 1: DNS, RDAP/WHOIS, ASN/hosting,
 TLS/certificate transparency, Google Safe Browsing, URLhaus/abuse.ch, OTX, URL
 parsing tricks, domain age, static DOM indicators, and source status. Each

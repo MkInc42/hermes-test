@@ -3,8 +3,15 @@
 from __future__ import annotations
 
 import json
+import socket
+import threading
+import time
 
+import psycopg
+
+import pte.enrichment_worker as enrichment_worker
 from pte.artifacts import ArtifactStore
+from pte.adapters import dns_lookup, unavailable_provider_results
 from pte.enrichment import (
     SOURCE_NAMES,
     analyze_dom,
@@ -13,7 +20,8 @@ from pte.enrichment import (
     canonical_json,
     persist_enrichment_job,
 )
-from pte.services import create_job, create_submission, get_job_bundle
+from pte.enrichment_worker import run_one_shot
+from pte.services import add_indicators, create_job, create_submission, get_job_bundle
 
 
 FIXTURE = json.loads((__import__("pathlib").Path(__file__).parent / "fixtures" / "fedex_smishing_case.json").read_text())
@@ -182,6 +190,93 @@ def test_missing_provider_and_dom_results_are_limited_not_silent():
     assert "No provider result was supplied" in " ".join(contract["risk"]["limitations"])
 
 
+def test_safe_local_defaults_cover_every_tool_backed_source_slot():
+    results = unavailable_provider_results("example.test")
+
+    assert set(results) == {
+        "urlhaus_abusech", "otx", "google_safe_browsing", "dns",
+        "rdap_whois", "domain_age", "asn_hosting", "tls_certificate_transparency",
+    }
+    assert {item["status"] for item in results.values()} == {"unavailable"}
+    assert all(item["limitations"] for item in results.values())
+
+
+def test_dns_adapter_normalizes_addresses_without_connecting_to_services():
+    def resolver(_hostname):
+        return [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:db8::1", 0, 0, 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.5", 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.5", 0)),
+        ]
+
+    result = dns_lookup("example.test", resolver=resolver)
+
+    assert result["status"] == "ok"
+    assert result["data"]["addresses"] == ["192.0.2.5", "2001:db8::1"]
+    assert "no service connection" in result["limitations"][0]
+
+
+def test_dns_adapter_returns_deterministic_not_found_unavailable_and_error():
+    def missing(_hostname):
+        raise socket.gaierror(socket.EAI_NONAME, "not found")
+
+    def slow(_hostname):
+        time.sleep(0.05)
+        return []
+
+    def broken(_hostname):
+        raise OSError("resolver unavailable")
+
+    assert dns_lookup("missing.test", resolver=missing)["status"] == "not_found"
+    timed_out = dns_lookup("slow.test", timeout_seconds=0.001, resolver=slow)
+    assert timed_out["status"] == "unavailable"
+    assert "0.001s deadline" in timed_out["limitations"][0]
+    assert dns_lookup("broken.test", resolver=broken)["status"] == "error"
+
+
+def test_dns_adapter_deadline_does_not_leave_a_nondaemon_worker():
+    release = threading.Event()
+
+    def stalled(_hostname):
+        release.wait()
+        return []
+
+    started = time.monotonic()
+    result = dns_lookup("stalled.test", timeout_seconds=0.01, resolver=stalled)
+    elapsed = time.monotonic() - started
+    workers = [thread for thread in threading.enumerate() if thread.name == "pte-dns"]
+
+    assert result["status"] == "unavailable"
+    assert elapsed < 0.2
+    assert workers and all(thread.daemon for thread in workers)
+    release.set()
+
+
+def test_dns_adapter_normalizes_malformed_resolver_output():
+    for malformed in (None, [None], [(socket.AF_INET, socket.SOCK_STREAM, 6, "", None)]):
+        result = dns_lookup("malformed.test", resolver=lambda _hostname, value=malformed: value)
+
+        assert result["status"] == "error"
+        assert result["limitations"] == ["DNS resolver returned malformed output."]
+
+
+def test_worker_cli_normalizes_database_errors_without_echoing_content(monkeypatch, capsys):
+    sensitive = "submitted-secret-content"
+
+    def unavailable(*_args, **_kwargs):
+        raise psycopg.OperationalError(f"database rejected {sensitive}")
+
+    monkeypatch.setattr(enrichment_worker, "run_one_shot", unavailable)
+
+    exit_code = enrichment_worker.main(["--tenant-uid", "cust_TEST", "--job-id", "job_TEST"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == "enrichment failed: database unavailable\n"
+    assert sensitive not in captured.err
+
+
 def test_not_found_reputation_without_positive_evidence_is_insufficient_not_benign():
     provider_results = {
         source: {"status": "not_found", "data": {"malicious": False}}
@@ -223,3 +318,27 @@ def test_enrichment_persistence_writes_artifact_observations_risk_and_source_sta
     assert bundle["source_status"][0]["source_type"] == "ocr_text_message"
     pointer = bundle["derived_artifacts"][0]["storage_pointer"]
     assert (tmp_path / "store" / pointer).is_file()
+
+
+def test_one_shot_safe_worker_loads_queued_job_and_persists_to_postgres(db, tenant_a, tmp_path):
+    submission = create_submission(db, tenant_a, "raw_url", envelope={"mode": "safe-local"})
+    job = create_job(db, tenant_a, submission["submission_id"], "raw_url")
+    add_indicators(db, tenant_a, job["job_id"], [{
+        "indicator_type": "url",
+        "raw_value": "https://example.test/path",
+        "defanged_value": "hxxps://example[.]test/path",
+    }])
+
+    result = run_one_shot(
+        db, tenant_uid=tenant_a, job_id=str(job["job_id"]),
+        artifact_store=ArtifactStore(tmp_path / "worker-store"),
+    )
+    bundle = get_job_bundle(db, tenant_a, job["job_id"])
+
+    assert bundle["job"]["state"] == "completed"
+    assert len(result["observations"]) == len(SOURCE_NAMES)
+    assert {row["source"]: row["status"] for row in bundle["enrichment_observations"]}[
+        "google_safe_browsing"
+    ] == "unavailable"
+    assert bundle["risk_scores"]
+    assert bundle["source_status"][0]["status"] == "enriched"

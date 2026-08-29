@@ -26,6 +26,8 @@ from pte.scanner import (
     run_dry_scan_job,
     runtime_contract,
     validate_url,
+    VpnAuthMode,
+    VpnRuntimeConfig,
 )
 from pte.services import (
     CrossTenantAccessError,
@@ -41,6 +43,21 @@ def _resolver_for(*addresses: str):
     return lambda *_args, **_kwargs: [
         (2, 1, 6, "", (address, 0)) for address in addresses
     ]
+
+
+def _vpn_config(tmp_path: Path) -> VpnRuntimeConfig:
+    ovpn = tmp_path / "operator.ovpn"
+    auth = tmp_path / "operator.auth"
+    ovpn.write_text("local test configuration")
+    auth.write_text("local test authentication")
+    ovpn.chmod(0o600)
+    auth.chmod(0o600)
+    config = VpnRuntimeConfig.from_env({
+        "PTE_VPN_OVPN_PATH": str(ovpn.resolve()),
+        "PTE_VPN_AUTH_FILE": str(auth.resolve()),
+    })
+    assert config is not None
+    return config
 
 
 @pytest.mark.parametrize("target", [
@@ -151,7 +168,8 @@ def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
     # A public preflight answer cannot authorize passing an attacker-controlled
     # hostname to a namespace where its next answer could be 127.0.0.1/private.
     local = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
-                          worker_uid=os.geteuid(), worker_gid=os.getegid())
+                          worker_uid=os.geteuid(), worker_gid=os.getegid(),
+                          vpn=_vpn_config(tmp_path))
     with pytest.raises(ScanPolicyError, match="address-pinned runtime egress"):
         build_container_command(local, target, output)
 
@@ -162,6 +180,7 @@ def test_operator_runtime_contract_is_deterministic_non_executing_and_pia_scoped
         route_mode=RouteMode.PIA_SIDECAR,
         worker_uid=os.geteuid(), worker_gid=os.getegid(),
         timeout_seconds=12, kill_grace_seconds=3,
+        vpn=_vpn_config(tmp_path),
     )
     output = create_job_output_dir(
         tmp_path.resolve(), job_id, worker_uid=os.geteuid(), worker_gid=os.getegid()
@@ -176,12 +195,18 @@ def test_operator_runtime_contract_is_deterministic_non_executing_and_pia_scoped
     assert contract["required_before_live"] == [
         "pinned-public-address-navigation", "namespace-private-egress-blocking",
     ]
+    assert contract["vpn"] == {
+        "configured": True,
+        "ovpn_path": str(config.vpn.ovpn_path),
+        "auth_mode": "auth-file",
+    }
 
 
 def test_runtime_contract_rejects_wrong_job_directory_and_symlinked_path(tmp_path):
     job_id = uuid.uuid4()
     config = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
-                           worker_uid=os.geteuid(), worker_gid=os.getegid())
+                           worker_uid=os.geteuid(), worker_gid=os.getegid(),
+                           vpn=_vpn_config(tmp_path))
     wrong = create_job_output_dir(tmp_path.resolve(), uuid.uuid4())
     with pytest.raises(ScanPolicyError, match="named for the job UUID"):
         runtime_contract(config, job_id, wrong)
@@ -208,6 +233,121 @@ def test_scanner_environment_contract_contains_no_credentials(monkeypatch):
     assert config.docker_binary == "/usr/bin/docker"
     assert not any("password" in field or "credential" in field
                    for field in config.__dataclass_fields__)
+
+
+def test_vpn_env_parsing_supports_exclusive_auth_modes_without_rendering_secrets(tmp_path):
+    ovpn = tmp_path / "safe.ovpn"
+    auth_file = tmp_path / "safe.auth"
+    ovpn.write_text("fixture only")
+    auth_file.write_text("fixture only")
+    ovpn.chmod(0o600)
+    auth_file.chmod(0o600)
+
+    file_config = ScannerConfig.from_env(environ={
+        "PTE_VPN_OVPN_PATH": str(ovpn.resolve()),
+        "PTE_VPN_AUTH_FILE": str(auth_file.resolve()),
+    })
+    assert file_config.vpn is not None
+    assert file_config.vpn.auth_mode is VpnAuthMode.FILE
+
+    inline_config = ScannerConfig.from_env(environ={
+        "PTE_VPN_OVPN_PATH": str(ovpn.resolve()),
+        "PTE_VPN_USERNAME": "test-user-value",
+        "PTE_VPN_PASSWORD": "test-password-value",
+    })
+    rendered = repr(inline_config)
+    assert inline_config.vpn is not None
+    assert inline_config.vpn.auth_mode is VpnAuthMode.USERNAME_PASSWORD
+    assert "test-user-value" not in rendered
+    assert "test-password-value" not in rendered
+    assert "redacted" in rendered
+
+
+@pytest.mark.parametrize("env", [
+    {"PTE_VPN_OVPN_PATH": "/unused"},
+    {"PTE_VPN_OVPN_PATH": "/unused", "PTE_VPN_USERNAME": "user"},
+    {"PTE_VPN_OVPN_PATH": "/unused", "PTE_VPN_PASSWORD": "pass"},
+    {"PTE_VPN_OVPN_PATH": "/unused", "PTE_VPN_AUTH_FILE": "/auth",
+     "PTE_VPN_USERNAME": "user", "PTE_VPN_PASSWORD": "pass"},
+    {"PTE_VPN_AUTH_FILE": "/auth"},
+])
+def test_vpn_env_rejects_missing_or_ambiguous_auth_before_file_access(env):
+    def reject_file_access(_path):
+        raise AssertionError("invalid authentication configuration accessed a VPN file")
+
+    with pytest.raises(ScanPolicyError):
+        ScannerConfig.from_env(environ=env, vpn_file_validator=reject_file_access)
+
+
+def test_vpn_paths_reject_missing_symlink_directory_and_unsafe_auth_permissions(tmp_path):
+    ovpn = tmp_path / "safe.ovpn"
+    ovpn.write_text("fixture only")
+    ovpn.chmod(0o600)
+    safe_env = {"PTE_VPN_OVPN_PATH": str(ovpn.resolve()),
+                "PTE_VPN_USERNAME": "user", "PTE_VPN_PASSWORD": "pass"}
+
+    for unsafe in (tmp_path / "missing.ovpn", tmp_path):
+        with pytest.raises(ScanPolicyError, match="missing or unsafe|regular file"):
+            ScannerConfig.from_env(environ={**safe_env, "PTE_VPN_OVPN_PATH": str(unsafe)})
+    linked = tmp_path / "linked.ovpn"
+    linked.symlink_to(ovpn)
+    with pytest.raises(ScanPolicyError, match="canonical regular file"):
+        ScannerConfig.from_env(environ={**safe_env, "PTE_VPN_OVPN_PATH": str(linked)})
+
+    auth = tmp_path / "unsafe.auth"
+    auth.write_text("fixture only")
+    auth.chmod(0o644)
+    with pytest.raises(ScanPolicyError, match="permissions"):
+        ScannerConfig.from_env(environ={
+            "PTE_VPN_OVPN_PATH": str(ovpn.resolve()),
+            "PTE_VPN_AUTH_FILE": str(auth.resolve()),
+        })
+
+
+@pytest.mark.parametrize("metadata_error", [
+    ValueError("sensitive path detail"),
+    RuntimeError("sensitive path detail"),
+])
+def test_vpn_path_metadata_errors_are_generic_and_suppress_details(
+        tmp_path, monkeypatch, metadata_error):
+    ovpn = tmp_path / "operator.ovpn"
+    ovpn.write_text("fixture only")
+    ovpn.chmod(0o600)
+    monkeypatch.setattr(Path, "lstat", lambda _path: (_ for _ in ()).throw(metadata_error))
+
+    with pytest.raises(ScanPolicyError) as raised:
+        ScannerConfig.from_env(environ={
+            "PTE_VPN_OVPN_PATH": str(ovpn.resolve()),
+            "PTE_VPN_USERNAME": "user",
+            "PTE_VPN_PASSWORD": "pass",
+        })
+
+    assert str(raised.value) == "VPN configuration file is missing or unsafe"
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
+
+
+@pytest.mark.parametrize("mode", [0o640, 0o620, 0o604, 0o602])
+def test_vpn_paths_reject_any_group_or_other_ovpn_permissions(tmp_path, mode):
+    ovpn = tmp_path / "unsafe-permissions.ovpn"
+    ovpn.write_text("fixture only")
+    ovpn.chmod(mode)
+
+    with pytest.raises(ScanPolicyError, match="permissions"):
+        ScannerConfig.from_env(environ={
+            "PTE_VPN_OVPN_PATH": str(ovpn.resolve()),
+            "PTE_VPN_USERNAME": "user",
+            "PTE_VPN_PASSWORD": "pass",
+        })
+
+
+def test_runtime_contract_requires_vpn_but_still_never_enables_live_execution(tmp_path):
+    job_id = uuid.uuid4()
+    output = create_job_output_dir(tmp_path.resolve(), job_id)
+    config = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
+                           worker_uid=os.geteuid(), worker_gid=os.getegid())
+    with pytest.raises(ScanPolicyError, match="requires local VPN"):
+        runtime_contract(config, job_id, output)
 
 
 class _HungProcess:

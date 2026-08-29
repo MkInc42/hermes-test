@@ -1,0 +1,26 @@
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+secrets/
+*.ovpn
+*.auth
+*.auth.txt
+*.credentials
+*.credentials.*
+*.creds
+*.creds.*
+auth
+auth.txt
+auth.conf
+auth.env
+auth.json
+credentials
+credentials.txt
+credentials.conf
+credentials.env
+credentials.json
+
+# Runtime output
+artifacts/
+tmp/

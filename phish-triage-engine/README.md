@@ -110,14 +110,35 @@ PTE_SCANNER_WORKER_UID="$(id -u)" PTE_SCANNER_WORKER_GID="$(id -g)" \
   OUTPUT_ROOT=./tmp/scanner-jobs
 ```
 
+Before preparing the contract, Reknown should store the provider-issued OVPN
+file and either an OpenVPN auth file or inline credentials locally, outside
+version control. Use restrictive permissions and absolute canonical paths:
+
+```bash
+mkdir -p ./secrets
+chmod 700 ./secrets
+chmod 600 ./secrets/operator.ovpn ./secrets/operator.auth
+export PTE_VPN_OVPN_PATH="$(pwd)/secrets/operator.ovpn"
+export PTE_VPN_AUTH_FILE="$(pwd)/secrets/operator.auth"
+```
+
+As an alternative to `PTE_VPN_AUTH_FILE`, set both `PTE_VPN_USERNAME` and
+`PTE_VPN_PASSWORD` in the process environment. Never set both authentication
+modes, and never put real values in `.env.example`, source, logs, tickets, or
+shell command arguments. The OVPN and auth files must not be accessible by
+group or other users; configuration paths must be absolute, canonical regular
+files and must not be symlinks. Project ignore rules cover `.env`, `secrets/`,
+OVPN/auth files, and runtime output, but operators remain responsible for local
+file permissions and secret handling.
+
 The command creates one new mode-`0700` directory for that job and prints a
 JSON contract. Reusing the job ID fails because output directories are
 single-use. Container names are deterministic (`pte-scan-` plus the UUID hex),
 so timeout cleanup always targets the exact per-job container. The contract
 contains `network_mode: service:pia-vpn`, bounded stop/kill settings, and the
-two missing live gates; it never runs Docker. `.env.example` lists only
-non-secret policy settings. VPN credentials belong in the separately operated
-PIA sidecar's secret store and must not be passed to this process.
+two missing live gates; it never runs Docker. Its VPN section contains only the
+authentication mode and OVPN path, never the auth-file path, username, or
+password. No credentials are placed in command-line arguments.
 
 ## One-shot OSINT enrichment worker
 

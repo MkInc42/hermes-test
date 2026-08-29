@@ -17,10 +17,10 @@ import socket
 import stat
 import subprocess
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import Callable, Mapping, Sequence
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 from .artifacts import ArtifactStore
@@ -54,6 +54,110 @@ class DownloadPolicy(str, Enum):
 
     BLOCK = "blocked"
     HASH_ONLY = "quarantine-metadata-hash-only"
+
+
+class VpnAuthMode(str, Enum):
+    """Supported ways to supply OpenVPN authentication."""
+
+    FILE = "auth-file"
+    USERNAME_PASSWORD = "username-password"
+
+
+class VpnInlineAuth:
+    """Write-only credentials that cannot be rendered accidentally."""
+
+    __slots__ = ("__username", "__password")
+
+    def __init__(self, username: str, password: str) -> None:
+        if not username or not password:
+            raise ScanPolicyError("VPN username and password must both be configured")
+        self.__username = username
+        self.__password = password
+
+    def __repr__(self) -> str:
+        return "VpnInlineAuth(<redacted>)"
+
+    def __str__(self) -> str:
+        return "<redacted>"
+
+    def apply(self, consumer: Callable[[str, str], object]) -> object:
+        """Provide credentials only to an injected stdin/file-descriptor adapter."""
+        return consumer(self.__username, self.__password)
+
+
+@dataclass(frozen=True)
+class VpnFileAuth:
+    """Reference to a locally protected OpenVPN auth file."""
+
+    path: Path = field(repr=False)
+
+    def __repr__(self) -> str:
+        return "VpnFileAuth(<configured>)"
+
+
+VpnAuth = VpnFileAuth | VpnInlineAuth
+PathValidator = Callable[[Path], Path]
+
+
+def _safe_vpn_file(path: Path) -> Path:
+    """Validate file metadata without opening or inspecting file contents."""
+    if not path.is_absolute():
+        raise ScanPolicyError("VPN file paths must be absolute")
+    try:
+        metadata = path.lstat()
+        resolved = path.resolve(strict=True)
+    except (OSError, ValueError, RuntimeError):
+        raise ScanPolicyError("VPN configuration file is missing or unsafe") from None
+    if path != resolved or not stat.S_ISREG(metadata.st_mode):
+        raise ScanPolicyError("VPN configuration file must be a canonical regular file")
+    permissions = stat.S_IMODE(metadata.st_mode)
+    if permissions & 0o077:
+        raise ScanPolicyError("VPN configuration file permissions are unsafe")
+    return resolved
+
+
+@dataclass(frozen=True)
+class VpnRuntimeConfig:
+    """Typed local OpenVPN inputs; credential material is never serialized."""
+
+    ovpn_path: Path
+    auth: VpnAuth = field(repr=False)
+
+    def __init__(self, ovpn_path: Path, auth: VpnAuth) -> None:
+        object.__setattr__(self, "ovpn_path", ovpn_path)
+        object.__setattr__(self, "auth", auth)
+
+    @property
+    def auth_mode(self) -> VpnAuthMode:
+        return (VpnAuthMode.FILE if isinstance(self.auth, VpnFileAuth)
+                else VpnAuthMode.USERNAME_PASSWORD)
+
+    def __repr__(self) -> str:
+        return (f"VpnRuntimeConfig(ovpn_path={self.ovpn_path!r}, "
+                f"auth_mode={self.auth_mode.value!r}, auth=<redacted>)")
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] = os.environ, *,
+                 validate_file: PathValidator = _safe_vpn_file) -> "VpnRuntimeConfig | None":
+        ovpn = environ.get("PTE_VPN_OVPN_PATH", "")
+        auth_file = environ.get("PTE_VPN_AUTH_FILE", "")
+        username = environ.get("PTE_VPN_USERNAME", "")
+        password = environ.get("PTE_VPN_PASSWORD", "")
+        if not any((ovpn, auth_file, username, password)):
+            return None
+        if not ovpn:
+            raise ScanPolicyError("VPN OVPN path is required")
+        if bool(username) != bool(password):
+            raise ScanPolicyError("VPN username and password must both be configured")
+        inline_mode = bool(username and password)
+        if bool(auth_file) == inline_mode:
+            raise ScanPolicyError("configure exactly one VPN authentication mode")
+        safe_ovpn = validate_file(Path(ovpn))
+        if auth_file:
+            auth: VpnAuth = VpnFileAuth(validate_file(Path(auth_file)))
+        else:
+            auth = VpnInlineAuth(username, password)
+        return cls(safe_ovpn, auth)
 
 
 @dataclass(frozen=True)
@@ -91,29 +195,35 @@ class ScannerConfig:
     docker_binary: str = "docker"
     worker_uid: int = 65532
     worker_gid: int = 65532
+    vpn: VpnRuntimeConfig | None = None
 
     @classmethod
-    def from_env(cls, prefix: str = "PTE_SCANNER_") -> "ScannerConfig":
-        """Load only non-secret operator policy from the environment."""
-        ports_text = os.environ.get(f"{prefix}ALLOWED_PORTS", "")
+    def from_env(cls, prefix: str = "PTE_SCANNER_", *,
+                 environ: Mapping[str, str] = os.environ,
+                 vpn_file_validator: PathValidator = _safe_vpn_file) -> "ScannerConfig":
+        """Load scanner policy and typed, non-renderable VPN inputs."""
+        ports_text = environ.get(f"{prefix}ALLOWED_PORTS", "")
         try:
             ports = frozenset(int(value) for value in ports_text.split(",") if value)
             return cls(
-                image=os.environ.get(f"{prefix}IMAGE", cls.image),
-                route_mode=RouteMode(os.environ.get(f"{prefix}ROUTE_MODE", cls.route_mode)),
-                pia_service=os.environ.get(f"{prefix}PIA_SERVICE", cls.pia_service),
-                timeout_seconds=float(os.environ.get(f"{prefix}TIMEOUT_SECONDS",
+                image=environ.get(f"{prefix}IMAGE", cls.image),
+                route_mode=RouteMode(environ.get(f"{prefix}ROUTE_MODE", cls.route_mode)),
+                pia_service=environ.get(f"{prefix}PIA_SERVICE", cls.pia_service),
+                timeout_seconds=float(environ.get(f"{prefix}TIMEOUT_SECONDS",
                                                      cls.timeout_seconds)),
-                kill_grace_seconds=float(os.environ.get(f"{prefix}KILL_GRACE_SECONDS",
+                kill_grace_seconds=float(environ.get(f"{prefix}KILL_GRACE_SECONDS",
                                                         cls.kill_grace_seconds)),
                 allowed_non_default_ports=ports,
-                download_policy=DownloadPolicy(os.environ.get(
+                download_policy=DownloadPolicy(environ.get(
                     f"{prefix}DOWNLOAD_POLICY", cls.download_policy
                 )),
-                docker_binary=os.environ.get(f"{prefix}DOCKER_BINARY", cls.docker_binary),
-                worker_uid=int(os.environ.get(f"{prefix}WORKER_UID", cls.worker_uid)),
-                worker_gid=int(os.environ.get(f"{prefix}WORKER_GID", cls.worker_gid)),
+                docker_binary=environ.get(f"{prefix}DOCKER_BINARY", cls.docker_binary),
+                worker_uid=int(environ.get(f"{prefix}WORKER_UID", cls.worker_uid)),
+                worker_gid=int(environ.get(f"{prefix}WORKER_GID", cls.worker_gid)),
+                vpn=VpnRuntimeConfig.from_env(environ, validate_file=vpn_file_validator),
             )
+        except ScanPolicyError:
+            raise
         except (TypeError, ValueError) as exc:
             raise ScanPolicyError("invalid scanner environment configuration") from exc
 
@@ -189,6 +299,8 @@ def runtime_contract(config: ScannerConfig, job_id: str | uuid.UUID,
     """Describe the future worker boundary without constructing a live command."""
     if config.route_mode is not RouteMode.PIA_SIDECAR:
         raise ScanPolicyError("operator runtime contract requires route_mode=pia-sidecar")
+    if config.vpn is None:
+        raise ScanPolicyError("operator runtime contract requires local VPN configuration")
     name = container_name(job_id)
     # container_name performs the public fail-closed UUID validation first.
     canonical_job_id = str(uuid.UUID(hex=name.removeprefix("pte-scan-")))
@@ -220,6 +332,11 @@ def runtime_contract(config: ScannerConfig, job_id: str | uuid.UUID,
         "cleanup_timeout_seconds": _DOCKER_CLEANUP_TIMEOUT_SECONDS,
         "network_mode": f"service:{config.pia_service}",
         "route_mode": config.route_mode.value,
+        "vpn": {
+            "configured": True,
+            "ovpn_path": str(config.vpn.ovpn_path),
+            "auth_mode": config.vpn.auth_mode.value,
+        },
         "live_enabled": False,
         "required_before_live": [
             "pinned-public-address-navigation",

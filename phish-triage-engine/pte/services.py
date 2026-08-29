@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 import psycopg
@@ -251,6 +252,116 @@ def set_job_state(
 def compute_sha256(data: bytes) -> str:
     """SHA-256 of exact bytes (chain-of-custody hash)."""
     return hashlib.sha256(data).hexdigest()
+
+
+def create_intake_bundle(
+    cfg: DbConfig,
+    *,
+    tenant_uid: str,
+    source_type: str,
+    fidelity: str,
+    fidelity_notes: str | None,
+    envelope: dict[str, Any],
+    policy_decisions: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+    derived_artifacts: list[dict[str, Any]] | None = None,
+    indicators: list[dict[str, Any]] | None = None,
+    storage_writer: Callable[[str, bytes], str],
+    consent_authorized: bool,
+    consent_no_credentials: bool,
+) -> dict[str, Any]:
+    """Atomically persist an accepted intake, job, artifacts, and indicators.
+
+    Blob writes happen before their referencing rows. On any error the database
+    transaction rolls back; content-addressed orphan blobs are harmless and may
+    be reused by a retry.
+    """
+    tenant_uid = require_tenant(tenant_uid)
+    if not consent_authorized or not consent_no_credentials:
+        raise ValidationError("authorization and no-credentials attestations are required")
+    if source_type not in {"raw_url", "email_artifact", "ocr_text_message", "screenshot_evidence"}:
+        raise ValidationError(f"invalid source_type: {source_type!r}")
+    if fidelity not in {"full", "partial", "low"}:
+        raise ValidationError(f"invalid fidelity: {fidelity!r}")
+
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute("SELECT status FROM tenants WHERE tenant_uid = %s FOR SHARE", (tenant_uid,))
+        tenant = cur.fetchone()
+        if tenant is None:
+            raise TenantRequiredError("unknown tenant_uid")
+        if tenant["status"] != "active":
+            raise TenantRequiredError("tenant is not active")
+        stored = [(item, storage_writer(tenant_uid, item["data"])) for item in artifacts]
+        derived_stored = [
+            (item, storage_writer(tenant_uid, item["data"]))
+            for item in (derived_artifacts or [])
+        ]
+        cur.execute(
+            """INSERT INTO submissions
+               (tenant_uid, source_type, submitted_by_type, consent_authorized,
+                consent_no_credentials, validation_status, fidelity, fidelity_notes)
+               VALUES (%s,%s,'customer_delegate',TRUE,TRUE,'accepted',%s,%s)
+               RETURNING submission_id, tenant_uid, source_type, validation_status, fidelity""",
+            (tenant_uid, source_type, fidelity, fidelity_notes),
+        )
+        submission = dict(cur.fetchone())
+        cur.execute(
+            "INSERT INTO submission_envelopes (submission_id, tenant_uid, envelope) VALUES (%s,%s,%s)",
+            (submission["submission_id"], tenant_uid, json.dumps(envelope)),
+        )
+        cur.execute(
+            """INSERT INTO jobs (tenant_uid, submission_id, source_type, state,
+                                  policy_decisions, queued_at)
+               VALUES (%s,%s,%s,'queued',%s,now())
+               RETURNING job_id, submission_id, source_type, state""",
+            (tenant_uid, submission["submission_id"], source_type, json.dumps(policy_decisions)),
+        )
+        job = dict(cur.fetchone())
+        artifact_rows = []
+        derived_rows = []
+        artifact_ids: dict[str, Any] = {}
+        for item, pointer in stored:
+            cur.execute(
+                """INSERT INTO input_artifacts
+                   (tenant_uid,job_id,submission_id,artifact_kind,artifact_type,
+                    original_filename,media_type,sha256,byte_size,storage_pointer,is_sensitive)
+                   VALUES (%s,%s,%s,'original',%s,%s,%s,%s,%s,%s,%s)
+                   RETURNING artifact_id,artifact_type,media_type,sha256,byte_size""",
+                (tenant_uid, job["job_id"], submission["submission_id"],
+                 item["artifact_type"], item.get("original_filename"), item["media_type"],
+                 compute_sha256(item["data"]), len(item["data"]), pointer,
+                 item.get("is_sensitive", True)),
+            )
+            row = dict(cur.fetchone())
+            artifact_rows.append(row)
+            if item.get("key"):
+                artifact_ids[item["key"]] = row["artifact_id"]
+        for item, pointer in derived_stored:
+            cur.execute(
+                """INSERT INTO derived_artifacts
+                   (tenant_uid,job_id,submission_id,parent_artifact_id,derived_kind,
+                    media_type,sha256,byte_size,storage_pointer,produced_by,tool_version)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'intake-parser','stdlib')
+                   RETURNING derived_id,parent_artifact_id,derived_kind,media_type,sha256,byte_size""",
+                (tenant_uid, job["job_id"], submission["submission_id"],
+                 artifact_ids.get(item.get("parent_key")), item["derived_kind"],
+                 item["media_type"], compute_sha256(item["data"]), len(item["data"]), pointer),
+            )
+            derived_rows.append(dict(cur.fetchone()))
+        for item in indicators or []:
+            cur.execute(
+                """INSERT INTO indicators
+                   (tenant_uid,job_id,indicator_type,raw_value,defanged_value,provenance,
+                    corroboration_status,confidence,extracted_by)
+                   VALUES (%s,%s,%s,%s,%s,%s,'unverified',%s,'intake')
+                   ON CONFLICT (tenant_uid,job_id,indicator_type,raw_value) DO NOTHING""",
+                (tenant_uid, job["job_id"], item["indicator_type"], item["raw_value"],
+                 item.get("defanged_value"), item.get("provenance", "parsed"),
+                 item.get("confidence")),
+            )
+        conn.commit()
+    return {"submission": submission, "job": job, "artifacts": artifact_rows,
+            "derived_artifacts": derived_rows}
 
 
 def add_input_artifact(

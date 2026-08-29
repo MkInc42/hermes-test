@@ -6,13 +6,20 @@ requires-python = ">=3.11"
 dependencies = [
     "psycopg[binary]>=3.2,<4",
     "pydantic>=2.7,<3",
+    "fastapi>=0.116,<0.120",
+    "uvicorn>=0.35,<1",
+    "python-multipart>=0.0.20,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8,<9",
     "pytest-cov>=5,<6",
+    "httpx>=0.28,<1",
 ]
+
+[project.scripts]
+pte-api = "pte.api:run"
 
 [build-system]
 requires = ["poetry-core>=1.9"]

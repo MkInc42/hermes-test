@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="Authorized phishing evidence intake for security operations.">
+  <title>Phish Triage — Evidence Intake</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/main.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#intake">Skip to evidence intake</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="#" aria-label="Phish Triage home">
+        <span class="brand-mark" aria-hidden="true">PT</span>
+        <span><strong>Phish Triage</strong><small>Evidence intake</small></span>
+      </a>
+      <span class="environment"><span aria-hidden="true"></span>Local intake</span>
+    </div>
+  </header>
+
+  <main id="intake" class="shell">
+    <section class="intro" aria-labelledby="page-title">
+      <p class="eyebrow">Controlled submission</p>
+      <h1 id="page-title">Submit suspected phishing evidence</h1>
+      <p>Provide the original email whenever possible. Evidence is accepted only after you confirm authorization and remove all passwords, session tokens, API keys, and other credentials.</p>
+    </section>
+
+    <details class="api-settings">
+      <summary>API connection</summary>
+      <div class="settings-body">
+        <label for="api-base">API base URL</label>
+        <div class="inline-control">
+          <input id="api-base" name="api_base" type="url" value="http://127.0.0.1:8000" inputmode="url" spellcheck="false" aria-describedby="api-help">
+          <button id="save-api-base" class="button secondary" type="button">Use address</button>
+        </div>
+        <p id="api-help" class="help">Defaults to the local API on port 8000. The address is saved only in this browser.</p>
+        <p id="api-status" class="field-status" role="status" aria-live="polite"></p>
+      </div>
+    </details>
+
+    <section class="intake-card" aria-labelledby="method-title">
+      <div class="section-heading">
+        <div>
+          <p class="step">Step 1 of 3</p>
+          <h2 id="method-title">Choose an evidence method</h2>
+        </div>
+        <span class="required-note"><span aria-hidden="true">*</span> Required</span>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Evidence method">
+        <button id="tab-upload" class="tab" type="button" role="tab" aria-selected="true" aria-controls="panel-upload">Email file</button>
+        <button id="tab-paste" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-paste" tabindex="-1">Paste email</button>
+        <button id="tab-screenshot" class="tab" type="button" role="tab" aria-selected="false" aria-controls="panel-screenshot" tabindex="-1" disabled aria-disabled="true">Screenshot / OCR <span>Coming soon</span></button>
+      </div>
+      <p class="future-note">Screenshot and OCR intake is not available in this client. The existing OCR API route is future-ready and will remain disabled here until the review workflow is ready.</p>
+
+      <section id="panel-upload" class="tab-panel" role="tabpanel" aria-labelledby="tab-upload">
+        <div class="guidance important">
+          <strong>Full headers enable complete analysis.</strong>
+          <p>Original routing, authentication, and sender metadata are required to evaluate delivery path and message authenticity. Forwarded content often removes this evidence.</p>
+        </div>
+
+        <form id="upload-form" class="intake-form" action="http://127.0.0.1:8000/v1/intake/email/upload" method="post" enctype="multipart/form-data">
+          <label id="drop-zone" class="drop-zone" for="email-file">
+            <span class="drop-title">Drop an email file here</span>
+            <span class="drop-copy">or choose a file from this device</span>
+            <span class="button secondary" aria-hidden="true">Choose file</span>
+            <input id="email-file" name="file" type="file" accept=".eml,.msg,message/rfc822,application/vnd.ms-outlook" required aria-describedby="file-help file-feedback">
+          </label>
+          <p id="file-help" class="help"><strong>.eml preferred</strong> · .msg accepted for preservation only and is not parsed · Maximum 10 MiB</p>
+          <p id="file-feedback" class="field-status" role="status" aria-live="polite"></p>
+
+          <div class="shared-fields">
+            <div class="field">
+              <label for="upload-tenant">Tenant UID <span aria-hidden="true">*</span></label>
+              <input id="upload-tenant" name="tenant_uid" type="text" maxlength="255" autocomplete="organization" required aria-describedby="upload-tenant-help">
+              <p id="upload-tenant-help" class="help">The tenant that owns this authorized investigation.</p>
+            </div>
+            <fieldset class="attestations">
+              <legend>Required attestations</legend>
+              <label class="check-row"><input name="authorization_attested" type="checkbox" value="true" required><span><strong>I am authorized to submit this evidence.</strong><small>I have permission to provide this material for analysis.</small></span></label>
+              <label class="check-row"><input name="no_credentials_acknowledged" type="checkbox" value="true" required><span><strong>I confirm no credentials are included.</strong><small>I removed passwords, tokens, secrets, recovery codes, and private keys.</small></span></label>
+            </fieldset>
+          </div>
+          <button class="button primary submit-button" type="submit">Submit email file</button>
+          <p class="gate-note">Both attestations are required before submission.</p>
+        </form>
+      </section>
+
+      <section id="panel-paste" class="tab-panel" role="tabpanel" aria-labelledby="tab-paste" hidden>
+        <div class="guidance warning">
+          <strong>Copy/paste is a lower-fidelity fallback.</strong>
+          <p>Formatting and transport metadata may be lost. Use full raw headers plus body when available; a forwarded body cannot support complete authentication or routing analysis.</p>
+        </div>
+        <form id="paste-form" class="intake-form" action="http://127.0.0.1:8000/v1/intake/email/paste" method="post">
+          <noscript><p class="noscript-note">JavaScript is required for JSON paste submission. Email file upload remains available without JavaScript.</p></noscript>
+          <div class="field">
+            <label for="paste-tenant">Tenant UID <span aria-hidden="true">*</span></label>
+            <input id="paste-tenant" name="tenant_uid" type="text" maxlength="255" autocomplete="organization" required>
+          </div>
+          <fieldset class="mode-choice">
+            <legend>What are you pasting? <span aria-hidden="true">*</span></legend>
+            <label><input type="radio" name="mode" value="headers_body" checked><span><strong>Full headers + body</strong><small>Best available paste fidelity</small></span></label>
+            <label><input type="radio" name="mode" value="forwarded_body"><span><strong>Forwarded body only</strong><small>Low fidelity; conclusions will be limited</small></span></label>
+          </fieldset>
+          <div id="headers-field" class="field">
+            <label for="raw-headers">Raw email headers <span aria-hidden="true">*</span></label>
+            <textarea id="raw-headers" name="raw_headers" rows="9" required spellcheck="false" aria-describedby="headers-help"></textarea>
+            <p id="headers-help" class="help">Include the complete, unedited header block. Full headers are needed for complete analysis.</p>
+          </div>
+          <div class="field">
+            <label for="email-body">Email body <span aria-hidden="true">*</span></label>
+            <textarea id="email-body" name="body" rows="12" required aria-describedby="body-help"></textarea>
+            <p id="body-help" class="help">Do not include passwords, tokens, secrets, recovery codes, or private keys. Combined limit: 10 MiB.</p>
+          </div>
+          <fieldset class="attestations">
+            <legend>Required attestations</legend>
+            <label class="check-row"><input name="authorization_attested" type="checkbox" value="true" required><span><strong>I am authorized to submit this evidence.</strong><small>I have permission to provide this material for analysis.</small></span></label>
+            <label class="check-row"><input name="no_credentials_acknowledged" type="checkbox" value="true" required><span><strong>I confirm no credentials are included.</strong><small>I removed passwords, tokens, secrets, recovery codes, and private keys.</small></span></label>
+          </fieldset>
+          <button class="button primary submit-button" type="submit">Submit pasted email</button>
+          <p class="gate-note">Both attestations are required before submission.</p>
+        </form>
+      </section>
+
+      <section id="panel-screenshot" class="tab-panel unavailable" role="tabpanel" aria-labelledby="tab-screenshot" hidden>
+        <p class="status-label">Coming soon</p>
+        <h3>Screenshot and OCR intake</h3>
+        <p>The API already includes future-ready OCR and screenshot routes, with a 15 MiB screenshot limit. This client keeps them disabled until the review workflow is ready; no screenshot or OCR submission is available here.</p>
+      </section>
+    </section>
+
+    <section class="result-card" aria-labelledby="result-title">
+      <p class="step">Step 3 of 3</p>
+      <h2 id="result-title">Submission status</h2>
+      <div id="result" class="result-content" role="status" aria-live="polite" aria-atomic="true">
+        <p>No evidence has been submitted in this session.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="shell">Authorized evidence only · Active content is not rendered by the intake API</div></footer>
+</body>
+</html>

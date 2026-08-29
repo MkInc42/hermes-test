@@ -571,6 +571,98 @@ def add_scan_event(
         return row
 
 
+def persist_scan_completion(
+    cfg: DbConfig,
+    *,
+    tenant_uid: str,
+    job_id: uuid.UUID | str,
+    submission_id: uuid.UUID | str,
+    route_label: str,
+    policy: dict[str, Any],
+    artifacts: list[dict[str, Any]],
+    storage_writer: Callable[[str, bytes], str],
+    actor: str = "scanner-runner",
+) -> dict[str, Any]:
+    """Atomically link completed scan output and finish its tenant-scoped job.
+
+    Blob writes precede database references.  A storage or SQL error leaves no
+    completed job or partial database evidence; content-addressed blobs from a
+    rolled-back attempt are safe, immutable retry candidates.
+    """
+    tenant_uid = require_tenant(tenant_uid)
+    if route_label not in {"direct-dev", "pia-sidecar-required"}:
+        raise ValidationError("completed scans require an approved route label")
+    allowed_kinds = {"screenshot_capture", "http_transcript", "redirect_chain",
+                     "dns_results", "dom_snapshot", "har", "enrichment_payload"}
+    if not artifacts:
+        raise ValidationError("a completed scan requires artifacts")
+    for item in artifacts:
+        if item.get("derived_kind") not in allowed_kinds:
+            raise ValidationError(f"invalid scan artifact kind: {item.get('derived_kind')!r}")
+        if not isinstance(item.get("data"), bytes):
+            raise ValidationError("scan artifact data must be bytes")
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT state, source_type FROM jobs WHERE job_id = %s AND tenant_uid = %s"
+            " AND submission_id = %s FOR UPDATE",
+            (job_id, tenant_uid, submission_id),
+        )
+        job = cur.fetchone()
+        if job is None:
+            raise CrossTenantAccessError(
+                f"job {job_id} and submission {submission_id} are not linked"
+            )
+        if job["state"] != "scanning":
+            raise ValidationError("scan completion requires a job in scanning state")
+        stored = [(item, storage_writer(tenant_uid, item["data"])) for item in artifacts]
+        rows: list[dict[str, Any]] = []
+        for item, pointer in stored:
+            cur.execute(
+                """
+                INSERT INTO derived_artifacts (
+                    tenant_uid, job_id, submission_id, derived_kind, media_type,
+                    sha256, byte_size, storage_pointer, produced_by, tool_version
+                ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                RETURNING derived_id, derived_kind, sha256, byte_size, storage_pointer
+                """,
+                (tenant_uid, job_id, submission_id, item["derived_kind"],
+                 item["media_type"], compute_sha256(item["data"]), len(item["data"]),
+                 pointer, actor, item.get("tool_version", "contract-v1")),
+            )
+            rows.append(dict(cur.fetchone()))
+        detail = {"policy": policy, "artifact_count": len(rows),
+                  "artifact_hashes": [row["sha256"] for row in rows]}
+        cur.execute(
+            """INSERT INTO scan_events
+               (tenant_uid,job_id,event_type,actor,route_label,outcome,detail)
+               VALUES (%s,%s,'scan_completed',%s,%s,'ok',%s)
+               RETURNING event_id,event_type,outcome,occurred_at""",
+            (tenant_uid, job_id, actor, route_label, json.dumps(detail)),
+        )
+        event = dict(cur.fetchone())
+        cur.execute(
+            """INSERT INTO source_status
+               (tenant_uid,job_id,source_type,status,status_detail)
+               VALUES (%s,%s,%s,'scanned',%s)
+               ON CONFLICT (tenant_uid,job_id,source_type)
+               DO UPDATE SET status='scanned',status_detail=EXCLUDED.status_detail,updated_at=now()""",
+            (tenant_uid, job_id, job["source_type"], json.dumps(detail)),
+        )
+        cur.execute(
+            "UPDATE jobs SET state='completed',finished_at=now()"
+            " WHERE job_id=%s AND tenant_uid=%s",
+            (job_id, tenant_uid),
+        )
+        cur.execute(
+            """INSERT INTO audit_events
+               (tenant_uid,job_id,actor,action,outcome,detail)
+               VALUES (%s,%s,%s,'job_state:completed','ok',%s)""",
+            (tenant_uid, job_id, actor, json.dumps({"reason": "scan artifacts persisted"})),
+        )
+        conn.commit()
+        return {"artifacts": rows, "event": event, "state": "completed"}
+
+
 def add_enrichment_observation(
     cfg: DbConfig,
     tenant_uid: str,

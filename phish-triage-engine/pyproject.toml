@@ -1,0 +1,26 @@
+[project]
+name = "phish-triage-engine"
+version = "0.1.0"
+description = "Internal phishing triage engine - backend persistence layer (Postgres schema, migrations, tenant-scoped persistence services)"
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.2,<4",
+    "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "pytest-cov>=5,<6",
+]
+
+[build-system]
+requires = ["poetry-core>=1.9"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{ include = "pte" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

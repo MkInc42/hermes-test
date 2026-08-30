@@ -607,11 +607,13 @@ def test_compose_vpn_profile_has_project_sidecar_and_no_socket_or_scanner_port()
     assert "scanner-worker:" not in compose
     entrypoint = (Path(__file__).parents[1] /
                   "docker/vpn-sidecar/entrypoint.sh").read_text()
+    up_script = (Path(__file__).parents[1] /
+                 "docker/vpn-sidecar/up.sh").read_text()
     assert "iptables -P OUTPUT DROP" in entrypoint
     assert "ip6tables -P OUTPUT DROP" in entrypoint
     for network in ("10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16",
                     "172.16.0.0/12", "192.168.0.0/16"):
-        assert network in entrypoint
+        assert network in up_script
 
 
 @pytest.mark.parametrize("cleanup_result", [

@@ -1,4 +1,4 @@
-.PHONY: dev-up migrate test test-vpn-runtime run-api enrich-fixture scan-proof scanner-prepare worker-once worker vpn-live-config
+.PHONY: dev-up migrate test test-vpn-runtime run-api enrich-fixture scan-proof scanner-prepare worker-once worker vpn-live-config scanner-build
 
 dev-up:
 	docker compose up -d --wait db
@@ -15,6 +15,9 @@ test-vpn-runtime:
 
 vpn-live-config:
 	docker compose --profile vpn-live config --quiet
+
+scanner-build:
+	docker build -t pte-scanner:local ./docker/scanner
 
 run-api:
 	poetry run uvicorn pte.api:app --host 127.0.0.1 --port 8000

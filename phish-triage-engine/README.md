@@ -178,7 +178,7 @@ install -m 600 /operator/source/pia.auth ./secrets/operator.auth
 chmod 600 ./secrets/operator.ovpn ./secrets/operator.auth
 export PTE_VPN_OVPN_PATH="$(pwd)/secrets/operator.ovpn"
 export PTE_VPN_AUTH_FILE="$(pwd)/secrets/operator.auth"
-export PTE_SCANNER_IMAGE=pte-scanner:operator-build
+export PTE_SCANNER_IMAGE=pte-scanner:local
 export PTE_WORKER_TENANT_UID=cust_EXAMPLE
 ```
 
@@ -204,12 +204,23 @@ poetry run python -m compileall -q pte tests
 The VPN service is opt-in under the `vpn-live` Compose profile. It is built from
 `docker/vpn-sidecar`: an exact Alpine release and exact OpenVPN/network package
 versions, with a project-owned entrypoint whose OUTPUT/FORWARD policies are
-DROP before OpenVPN starts. Before the tunnel is up, only Docker DNS and the
-resolved VPN server endpoints are allowed. After `tun0` is up, non-tunnel
+DROP before OpenVPN starts. During single-process bootstrap, the entrypoint
+resolves only the configured VPN remote names, pins those addresses into the
+ephemeral runtime profile, then installs DROP policies before OpenVPN starts.
+Before the tunnel is up, only those pinned VPN server endpoints are allowed.
+After `tun0` is up, non-tunnel
 egress and IPv6 are denied, and IPv4 private/RFC1918, loopback, link-local,
 CGNAT, multicast, reserved/documentation, and metadata destinations are
 rejected before the general `tun0` allow. Those namespace rules cover initial
-navigation, redirects, and browser subresources.
+navigation, redirects, and browser subresources. The source profile stays
+read-only. At startup the sidecar creates a mode-`0600` runtime copy under
+`/run`, removes deprecated `compress`/`comp-lzo` directives, and applies
+receive-only `allow-compression asym` compatibility. Profiles that explicitly
+request outbound compression fail closed. The historical PIA-patched
+`scramble` transport-obfuscation directive is also removed from that runtime
+copy because stock OpenVPN 2.6 does not implement it; TLS encryption is
+unchanged, and endpoints that require scrambling fail negotiation behind the
+already-installed kill switch.
 
 The live queue worker is deliberately run on the Docker host, not in Compose:
 it needs the Docker CLI to create and clean up one scanner container per job.
@@ -227,16 +238,15 @@ PTE_SCANNER_ROUTE_MODE=pia-sidecar poetry run pte-worker \
   --tenant-uid "$PTE_WORKER_TENANT_UID"
 ```
 
-This repository defines but does not pretend to provide the browser scanner
-image. The operator build must produce the exact tag in `PTE_SCANNER_IMAGE`,
-run as UID/GID `65532:65532`, and implement the bounded command
+Build the repository-owned passive Chromium scanner with `make scanner-build`.
+It produces the default `pte-scanner:local` tag, runs as UID/GID `65532:65532`,
+and implements the bounded command
 `scan --target-file /run/pte/target-url --output /output`, reading the URL from
 that mode-`0600`, scanner-owned, read-only bind mount and writing only the approved artifact names
-documented above. Because Docker's embedded resolver is not allowed through the
-kill switch, that image must configure its browser to use DNS-over-HTTPS or an
-explicit public resolver through the tunnel for redirect/subresource names; it
-must apply the same public-address policy to those resolutions. Live mode fails
-if that image/command is absent.
+documented above. The initial host is address-pinned by the worker. Redirect or
+subresource DNS cannot fall back to Docker/host DNS; unresolved secondary names
+fail closed while the sidecar independently rejects every private or non-tunnel
+destination. Live mode fails if the image/command is absent.
 Real VPN verification is skipped when credentials/files are
 absent. Unit tests use injected subprocess adapters and make no VPN call.
 Starting the profile is a separate operator deployment action.

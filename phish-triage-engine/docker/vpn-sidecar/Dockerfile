@@ -9,9 +9,13 @@ RUN apk add --no-cache \
       openvpn=2.6.20-r0
 
 COPY entrypoint.sh /usr/local/sbin/vpn-entrypoint
+COPY prepare-config.sh /usr/local/sbin/vpn-prepare-config
+COPY pin-remotes.sh /usr/local/sbin/vpn-pin-remotes
+COPY up.sh /usr/local/sbin/vpn-up
 COPY healthcheck.sh /usr/local/sbin/vpn-healthcheck
 COPY egress-check.sh /usr/local/sbin/vpn-egress-check
-RUN chmod 0555 /usr/local/sbin/vpn-entrypoint /usr/local/sbin/vpn-healthcheck \
+RUN chmod 0555 /usr/local/sbin/vpn-entrypoint /usr/local/sbin/vpn-prepare-config \
+      /usr/local/sbin/vpn-pin-remotes /usr/local/sbin/vpn-up /usr/local/sbin/vpn-healthcheck \
       /usr/local/sbin/vpn-egress-check
 
 ENTRYPOINT ["/usr/local/sbin/vpn-entrypoint"]

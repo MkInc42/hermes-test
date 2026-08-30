@@ -128,6 +128,8 @@ def test_scanner_gives_chromium_a_writable_disposable_home(tmp_path, monkeypatch
         }
         assert f"--user-data-dir={chromium_home / 'profile'}" in command
         assert f"--disk-cache-dir={chromium_home / 'cache'}" in command
+        assert "--disable-breakpad" in command
+        assert "--disable-crash-reporter" in command
         screenshot_arg = next(value for value in command if value.startswith("--screenshot="))
         Path(screenshot_arg.removeprefix("--screenshot=")).write_bytes(b"png")
         return subprocess.CompletedProcess(command, 0, stdout=b"<html></html>")

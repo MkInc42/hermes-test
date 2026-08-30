@@ -39,7 +39,8 @@ def scan(target_file: pathlib.Path, output: pathlib.Path) -> int:
     CHROMIUM_HOME.mkdir(mode=0o700)
     command = [
         "/usr/bin/chromium-browser", "--headless", "--disable-gpu", "--no-sandbox",
-        "--disable-dev-shm-usage", "--disable-background-networking",
+        "--disable-dev-shm-usage", "--disable-breakpad", "--disable-crash-reporter",
+        "--disable-background-networking",
         "--disable-component-update", "--disable-default-apps", "--disable-extensions",
         "--disable-sync", "--metrics-recording-only", "--no-first-run",
         "--safebrowsing-disable-auto-update", "--disable-features=Translate",

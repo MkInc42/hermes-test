@@ -202,8 +202,10 @@ poetry run python -m compileall -q pte tests
 ```
 
 The VPN service is opt-in under the `vpn-live` Compose profile. It is built from
-`docker/vpn-sidecar`: an exact Alpine release and exact OpenVPN/network package
-versions, with a project-owned entrypoint whose OUTPUT/FORWARD policies are
+`docker/vpn-sidecar`: an exact Alpine release and a source-built OpenVPN 2.6.22
+client with Tunnelblick's XOR patches pinned to commit
+`c9c73dca6c99afbba14b53e291b18f044210a1b5`, plus exact runtime package
+versions and a project-owned entrypoint whose OUTPUT/FORWARD policies are
 DROP before OpenVPN starts. During single-process bootstrap, the entrypoint
 resolves only the configured VPN remote names, pins those addresses into the
 ephemeral runtime profile, then installs DROP policies before OpenVPN starts.
@@ -216,11 +218,10 @@ navigation, redirects, and browser subresources. The source profile stays
 read-only. At startup the sidecar creates a mode-`0600` runtime copy under
 `/run`, removes deprecated `compress`/`comp-lzo` directives, and applies
 receive-only `allow-compression asym` compatibility. Profiles that explicitly
-request outbound compression fail closed. The historical PIA-patched
-`scramble` transport-obfuscation directive is also removed from that runtime
-copy because stock OpenVPN 2.6 does not implement it; TLS encryption is
-unchanged, and endpoints that require scrambling fail negotiation behind the
-already-installed kill switch.
+request outbound compression fail closed. The historical PIA
+`scramble obfuscate [mask]` transport is preserved and handled by the pinned
+XOR client; other `scramble` forms fail closed during runtime-copy preparation.
+Scrambling is transport obfuscation, not a substitute for TLS encryption.
 
 The live queue worker is deliberately run on the Docker host, not in Compose:
 it needs the Docker CLI to create and clean up one scanner container per job.

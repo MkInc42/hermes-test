@@ -7,17 +7,26 @@ temporary="${runtime_profile}.tmp"
 umask 077
 trap 'rm -f "$temporary"' EXIT HUP INT TERM
 
-# OpenVPN 2.6 deprecates the legacy compression directives.  PIA profiles can
-# still contain a bare `compress`; translate only that compatibility surface to
-# asymmetric receive-only support.  Never enable outbound compression, and
-# never modify the operator-owned, read-only source profile.
+# The sidecar is built with Tunnelblick's pinned XOR patch. Preserve PIA's
+# historical `scramble obfuscate [mask]` spelling, including the older bare
+# form (which the patched parser treats as the xormask named "obfuscate").
+# Reject every other scramble form so a profile can never silently fall back
+# to a different wire protocol.
+#
+# OpenVPN 2.6 deprecates the legacy compression directives. Translate only that
+# compatibility surface to asymmetric receive-only support. Never enable
+# outbound compression or modify the operator-owned, read-only source profile.
 awk '
-BEGIN { compatibility = 0; existing_policy = ""; unsafe = 0 }
-# `scramble` came from a historical PIA-patched OpenVPN client and is not an
-# OpenVPN 2.6 directive.  It obfuscated (but did not encrypt) the transport.
-# Stock endpoints generally accept the normal TLS transport; if one does not,
-# normal OpenVPN negotiation fails while the pre-tunnel kill switch stays up.
-/^[[:space:]]*scramble([[:space:]]|$)/ { next }
+BEGIN { compatibility = 0; existing_policy = ""; unsafe = 0; unsupported_scramble = 0 }
+/^[[:space:]]*scramble([[:space:]]|$)/ {
+    line = $0
+    sub(/[[:space:]]*[;#].*$/, "", line)
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+    fields = split(line, parts, /[[:space:]]+/)
+    if (parts[1] != "scramble" || parts[2] != "obfuscate" || fields > 3) unsupported_scramble = 1
+    print
+    next
+}
 /^[[:space:]]*(compress|comp-lzo)([[:space:]]|$)/ {
     compatibility = 1
     next
@@ -31,7 +40,7 @@ BEGIN { compatibility = 0; existing_policy = ""; unsafe = 0 }
 }
 { print }
 END {
-    if (unsafe) exit 42
+    if (unsafe || unsupported_scramble) exit 42
     if (compatibility || existing_policy == "asym") print "allow-compression asym"
     else print "allow-compression no"
 }

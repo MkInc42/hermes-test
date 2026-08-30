@@ -22,14 +22,14 @@ def _convert(tmp_path: Path, content: str):
 
 
 def test_legacy_compression_is_converted_in_runtime_copy_only(tmp_path):
-    original = "client\nscramble obfuscate\ncompress\ncomp-lzo no\nremote vpn.example 1198 udp\n"
+    original = "client\nscramble obfuscate provider-mask\ncompress\ncomp-lzo no\nremote vpn.example 1198 udp\n"
     source, runtime, completed = _convert(tmp_path, original)
     assert completed.returncode == 0
     assert completed.stdout == completed.stderr == ""
     assert source.read_text() == original
     converted = runtime.read_text()
     assert "\ncompress\n" not in converted and "comp-lzo" not in converted
-    assert "scramble" not in converted
+    assert "scramble obfuscate provider-mask" in converted
     assert converted.count("allow-compression asym") == 1
     assert runtime.stat().st_mode & 0o777 == 0o600
 
@@ -60,6 +60,27 @@ def test_outbound_compression_request_fails_without_profile_disclosure(tmp_path)
     assert not runtime.exists()
     assert secret_marker not in completed.stdout + completed.stderr
     assert source.read_text().endswith("allow-compression yes\n")
+
+
+def test_unsupported_scramble_profile_fails_closed_without_disclosure(tmp_path):
+    secret_marker = "never-render-this-scramble-value"
+    source, runtime, completed = _convert(
+        tmp_path, f"client\n# {secret_marker}\nscramble reverse\n")
+    assert completed.returncode != 0
+    assert not runtime.exists()
+    assert completed.stdout == ""
+    assert completed.stderr == "VPN profile compatibility conversion failed\n"
+    assert secret_marker not in completed.stdout + completed.stderr
+    assert source.read_text().endswith("scramble reverse\n")
+
+
+def test_sidecar_build_pins_reviewable_xor_client():
+    dockerfile = (ROOT / "docker/vpn-sidecar/Dockerfile").read_text()
+    assert "OPENVPN_VERSION=2.6.22" in dockerfile
+    assert "OPENVPN_SHA256=f46df740" in dockerfile
+    assert "TUNNELBLICK_COMMIT=c9c73dca6c99" in dockerfile
+    assert "tunnelblick-openvpn_xorpatch" in dockerfile
+    assert "COPY --from=openvpn-build /stage/usr/sbin/openvpn" in dockerfile
 
 
 def test_scanner_image_declares_non_root_contract_and_redacted_failure(tmp_path):

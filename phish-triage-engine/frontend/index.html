@@ -13,41 +13,41 @@
 </head>
 <body>
   <a class="skip-link" href="#intake">Skip to evidence intake</a>
+  <div class="app-shell">
+  <aside class="app-sidebar" aria-label="Application">
+    <a class="brand" href="#" aria-label="Phish Triage home">
+      <span class="brand-mark" aria-hidden="true">PT</span>
+      <span><strong>Phish Triage</strong><small>Evidence console</small></span>
+    </a>
+    <nav class="sidebar-nav" aria-label="Workspace">
+      <a class="sidebar-link active" href="#intake" aria-current="page"><span aria-hidden="true">01</span>Intake</a>
+      <a class="sidebar-link" href="#result-title"><span aria-hidden="true">02</span>Status</a>
+    </nav>
+    <div class="sidebar-foot"><span class="status-dot" aria-hidden="true"></span><span><strong>Local workspace</strong><small>Trusted network only</small></span></div>
+  </aside>
+  <div class="app-body">
   <header class="site-header">
-    <div class="shell header-inner">
-      <a class="brand" href="#" aria-label="Phish Triage home">
-        <span class="brand-mark" aria-hidden="true">PT</span>
-        <span><strong>Phish Triage</strong><small>Evidence intake</small></span>
-      </a>
-      <span class="environment"><span aria-hidden="true"></span>Local intake</span>
+    <div class="header-inner">
+      <div class="mobile-brand" role="img" aria-label="Phish Triage"><span class="brand-mark">PT</span><strong>Phish Triage</strong></div>
+      <div class="command-title"><span>Security operations</span><strong>Evidence intake</strong></div>
+      <span class="environment"><span aria-hidden="true"></span>Intake ready</span>
     </div>
   </header>
 
-  <main id="intake" class="shell">
+  <main id="intake" class="main-content">
     <section class="intro" aria-labelledby="page-title">
-      <p class="eyebrow">Controlled submission</p>
-      <h1 id="page-title">Submit suspected phishing evidence</h1>
-      <p>Provide the original email whenever possible. Evidence is accepted only after you confirm authorization and remove all passwords, session tokens, API keys, and other credentials.</p>
+      <div><p class="eyebrow">Controlled submission</p><h1 id="page-title">Submit suspected phishing evidence</h1><p>Provide the original email whenever possible. Evidence is accepted only after you confirm authorization and remove all passwords, session tokens, API keys, and other credentials.</p></div>
+      <span class="page-badge"><span aria-hidden="true"></span>Authorized intake</span>
     </section>
 
-    <details class="api-settings">
-      <summary>API connection</summary>
-      <div class="settings-body">
-        <label for="api-base">API base URL</label>
-        <div class="inline-control">
-          <input id="api-base" name="api_base" type="url" value="http://127.0.0.1:8000" inputmode="url" spellcheck="false" aria-describedby="api-help">
-          <button id="save-api-base" class="button secondary" type="button">Use address</button>
-        </div>
-        <p id="api-help" class="help">Loopback pages default to API port 8000. The trusted-LAN UI at http://192.168.1.115:8088 uses http://192.168.1.115:8012. LAN binding is trusted-network-only. A saved address must be loopback or match this page's host.</p>
-        <p id="api-status" class="field-status" role="status" aria-live="polite"></p>
-      </div>
-    </details>
-
+    <div class="workspace-grid">
+    <div class="intake-column">
     <section class="intake-card" aria-labelledby="method-title">
       <div class="section-heading">
         <div>
-          <p class="step">Step 1 of 3</p>
+          <p class="step">Step 1 of 2</p>
           <h2 id="method-title">Choose an evidence method</h2>
+          <p class="section-copy">Select the highest-fidelity source available.</p>
         </div>
         <span class="required-note"><span aria-hidden="true">*</span> Required</span>
       </div>
@@ -161,16 +161,36 @@
         </form>
       </section>
     </section>
+    </div>
 
-    <section class="result-card" aria-labelledby="result-title">
-      <p class="step">Step 3 of 3</p>
+    <aside class="context-rail" aria-label="Intake context">
+      <details class="api-settings" open>
+        <summary><span>API connection</span><span class="connection-badge"><span aria-hidden="true"></span>Configured</span></summary>
+        <div class="settings-body">
+          <label for="api-base">API base URL</label>
+          <div class="inline-control">
+            <input id="api-base" name="api_base" type="url" value="http://127.0.0.1:8000" inputmode="url" spellcheck="false" aria-describedby="api-help">
+            <button id="save-api-base" class="button secondary" type="button">Use address</button>
+          </div>
+          <p id="api-help" class="help">Loopback pages default to API port 8000. The trusted-LAN UI at http://192.168.1.115:8088 uses http://192.168.1.115:8012. LAN binding is trusted-network-only. A saved address must be loopback or match this page's host.</p>
+          <p id="api-status" class="field-status" role="status" aria-live="polite"></p>
+        </div>
+      </details>
+      <section class="result-card" aria-labelledby="result-title">
+      <p class="step">Step 2 of 2</p>
       <h2 id="result-title">Submission status</h2>
       <div id="result" class="result-content" role="status" aria-live="polite" aria-atomic="true">
         <p>No evidence has been submitted in this session.</p>
       </div>
-    </section>
+      </section>
+      <section class="context-card" aria-labelledby="handling-title"><p class="status-label">Evidence handling</p><h2 id="handling-title">Safe by default</h2><ul class="status-list"><li><span aria-hidden="true">✓</span>Active content is never rendered</li><li><span aria-hidden="true">✓</span>URLs are stored, not fetched</li><li><span aria-hidden="true">✓</span>Only safe job metadata is shown</li></ul></section>
+      <section class="context-card"><p class="status-label">Accepted evidence</p><div class="badge-list"><span>.eml</span><span>.msg</span><span>URL</span><span>OCR</span><span>PNG</span><span>JPEG</span><span>WebP</span><span>PDF</span></div></section>
+    </aside>
+    </div>
   </main>
 
-  <footer class="site-footer"><div class="shell">Authorized evidence only · Active content is not rendered by the intake API</div></footer>
+  <footer class="site-footer">Authorized evidence only · Active content is not rendered by the intake API</footer>
+  </div>
+  </div>
 </body>
 </html>

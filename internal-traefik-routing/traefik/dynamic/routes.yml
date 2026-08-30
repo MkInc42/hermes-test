@@ -16,7 +16,7 @@ http:
     phish-api-same-origin:
       entryPoints: [web]
       rule: >-
-        Host(`phish.192-168-1-115.sslip.io`) &&
+        Host(`phish.192-168-1-115.nip.io`) &&
         (PathPrefix(`/v1`) || Path(`/health`) || PathPrefix(`/docs`) ||
         PathPrefix(`/redoc`) || Path(`/openapi.json`))
       priority: 200
@@ -25,32 +25,32 @@ http:
 
     phish-ui:
       entryPoints: [web]
-      rule: "Host(`phish.192-168-1-115.sslip.io`)"
+      rule: "Host(`phish.192-168-1-115.nip.io`)"
       priority: 100
       middlewares: [internal-only]
       service: phish-ui-native
 
     phish-api:
       entryPoints: [web]
-      rule: "Host(`phish-api.192-168-1-115.sslip.io`)"
+      rule: "Host(`phish-api.192-168-1-115.nip.io`)"
       middlewares: [internal-only]
       service: phish-api-native
 
     filedrop:
       entryPoints: [web]
-      rule: "Host(`filedrop.192-168-1-115.sslip.io`)"
+      rule: "Host(`filedrop.192-168-1-115.nip.io`)"
       middlewares: [internal-only]
       service: trip-filedrop-native
 
     intake:
       entryPoints: [web]
-      rule: "Host(`intake.192-168-1-115.sslip.io`)"
+      rule: "Host(`intake.192-168-1-115.nip.io`)"
       middlewares: [internal-only]
       service: intake-docker
 
     traefik-dashboard:
       entryPoints: [web]
-      rule: "Host(`traefik.192-168-1-115.sslip.io`)"
+      rule: "Host(`traefik.192-168-1-115.nip.io`)"
       middlewares: [internal-only]
       service: api@internal
 
@@ -77,8 +77,8 @@ http:
         servers:
           - url: "http://host.docker.internal:8787"
 
-    # Existing intake-api is already on proxy-public. This file-provider service
-    # avoids changing its labels, published port, or container lifecycle.
+    # Existing intake-api is already on proxy-public. Keep this reviewed route in
+    # the file provider: the Docker constraint excludes its unchanged labels.
     intake-docker:
       loadBalancer:
         servers:

@@ -20,6 +20,9 @@ providers:
   docker:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
+    # Require a stack-specific opt-in in addition to traefik.enable=true so
+    # unrelated containers (including the unchanged intake-api) stay invisible.
+    constraints: "Label(`traefik.internal-lan`, `true`)"
     network: proxy-public
     watch: true
   file:

@@ -2,7 +2,7 @@
 
 Inventory captured 2026-08-30 12:09 EDT on host `192.168.1.115`.
 
-Scope is trusted-LAN testing only. The intended DNS-free names use the sslip.io pattern below; no public DNS, Cloudflare tunnel, router forwarding, TLS termination, or production cutover is part of this plan.
+Scope is trusted-LAN testing only. The intended DNS-free names use the nip.io pattern below; no public DNS, Cloudflare tunnel, router forwarding, TLS termination, or production cutover is part of this plan.
 
 ## Runtime inventory
 
@@ -37,13 +37,13 @@ All names below assume Traefik's LAN HTTP entrypoint on host port 80 and the hos
 
 | Hostname | Route / priority | Backend target | Status and safety notes |
 |---|---|---|---|
-| `phish.192-168-1-115.sslip.io` | `/v1/*`, `/health`, `/docs` | `http://host.docker.internal:8012` | Active Phish Triage API. Bind is LAN-wide and the API is intentionally privacy-sensitive. Keep this hostname LAN-only; do not route 8001/8002. |
-| `phish.192-168-1-115.sslip.io` | catch-all `/` | `http://host.docker.internal:8088` | Active dependency-free Phish Triage UI. Lower priority than `/v1` and `/health` routes so UI fallback cannot capture API requests. Transitional until the UI is containerized. Same-origin proxying avoids the UI's split-origin CORS setup. |
-| `kanban.192-168-1-115.sslip.io` | none (reserved hostname) | `http://host.docker.internal:9119` remains defined but unrouted | **Disabled.** The native route redirects to `/login`, which returns 404 under this hostname, and no separate proxy authentication was observed. Do not add a router until there is a working login flow and a real auth boundary; never publish it outside the LAN. |
-| `fambridge.192-168-1-115.sslip.io` | catch-all `/` | `http://host.docker.internal:5630` | Active local Django/FamBridge preview. Transitional native route. Keep local/LAN only; no public tunnel. |
-| `trip.192-168-1-115.sslip.io` | catch-all `/` | `http://host.docker.internal:8787` | Active file-drop UI/API. Sensitive uploaded files and no container healthcheck were observed. LAN-only, and preferably protect with app authentication before sharing beyond the operator's trusted workstation. Transitional until network labels replace the `0.0.0.0:8787` publication. |
-| `intake.192-168-1-115.sslip.io` | `/api/*`, `/health` | `http://intake-api:8000` on `proxy-public` | Active Covered On intake API, healthy, root `/docs` available. Existing labels default to `intake.coveredon.com`; an internal sslip hostname override is required before the route matches. Never route `intake-db`. |
-| `cowa.192-168-1-115.sslip.io` | `/api/*`, `/health` | `http://cowa-backend:8000` on `proxy-public` | **Reserved, not active.** The COWA compose definition exists and is already designed for `proxy-public`, but no `cowa-backend` container is running. Its current labels use `api.coveredon.com`; do not start it until those production-oriented hostnames and any required secrets are replaced with internal test values. |
+| `phish.192-168-1-115.nip.io` | `/v1/*`, `/health`, `/docs` | `http://host.docker.internal:8012` | Active Phish Triage API. Bind is LAN-wide and the API is intentionally privacy-sensitive. Keep this hostname LAN-only; do not route 8001/8002. |
+| `phish.192-168-1-115.nip.io` | catch-all `/` | `http://host.docker.internal:8088` | Active dependency-free Phish Triage UI. Lower priority than `/v1` and `/health` routes so UI fallback cannot capture API requests. Transitional until the UI is containerized. Same-origin proxying avoids the UI's split-origin CORS setup. |
+| `kanban.192-168-1-115.nip.io` | none (reserved hostname) | `http://host.docker.internal:9119` remains defined but unrouted | **Disabled.** The native route redirects to `/login`, which returns 404 under this hostname, and no separate proxy authentication was observed. Do not add a router until there is a working login flow and a real auth boundary; never publish it outside the LAN. |
+| `fambridge.192-168-1-115.nip.io` | catch-all `/` | `http://host.docker.internal:5630` | Active local Django/FamBridge preview. Transitional native route. Keep local/LAN only; no public tunnel. |
+| `trip.192-168-1-115.nip.io` | catch-all `/` | `http://host.docker.internal:8787` | Active file-drop UI/API. Sensitive uploaded files and no container healthcheck were observed. LAN-only, and preferably protect with app authentication before sharing beyond the operator's trusted workstation. Transitional until network labels replace the `0.0.0.0:8787` publication. |
+| `intake.192-168-1-115.nip.io` | `/api/*`, `/health` | `http://intake-api:8000` on `proxy-public` | Active Covered On intake API, healthy, root `/docs` available. Live labels were observed using `intake.localhost`; the Docker-provider constraint excludes them, while this reviewed file-provider route supplies the protected LAN hostname. Never route `intake-db`. |
+| `cowa.192-168-1-115.nip.io` | `/api/*`, `/health` | `http://cowa-backend:8000` on `proxy-public` | **Reserved, not active.** The COWA compose definition exists and is already designed for `proxy-public`, but no `cowa-backend` container is running. Its current labels use `api.coveredon.com`; do not start it until those production-oriented hostnames and any required secrets are replaced with internal test values. |
 
 ## Ports and exposure decisions
 
@@ -57,10 +57,8 @@ All names below assume Traefik's LAN HTTP entrypoint on host port 80 and the hos
 
 ## Implementation handoff and restart gates
 
-1. Create a new, uniquely named Traefik stack on `proxy-public`, binding only the intended LAN HTTP port. Use Docker provider for `intake-api`/future COWA and a file provider with `host-gateway` for the native transitional backends.
-2. The intake labels currently interpolate the default hostname `intake.coveredon.com`. Applying the sslip hostname through the existing compose file will require a controlled intake-api recreation, for example:
-   `TRAEFIK_HOST=intake.192-168-1-115.sslip.io docker compose -f /home/black/covered-on-intake-api/docker-compose.yml up -d intake-api`
-   Do not run that from this inventory task; obtain the operator's restart approval in the implementation task and verify the container remains healthy afterward.
+1. Create a new, uniquely named Traefik stack on `proxy-public`, binding only the intended LAN HTTP port. The Docker provider requires the explicit `traefik.internal-lan=true` opt-in in addition to `traefik.enable=true`; use the file provider with `host-gateway` for the reviewed transitional backends.
+2. Live `intake-api` labels were found using `intake.localhost`, not `intake.coveredon.com`. Do not modify, recreate, or restart that container. The Docker-provider constraint prevents those accidental labels from creating a route, and the reviewed file-provider service routes `intake.192-168-1-115.nip.io` directly over `proxy-public` with `internal-only` protection.
 3. Do not restart relay, trip-filedrop, FamBridge, Hermes, databases, or any unrelated service during Traefik installation. The initial file-provider routes avoid an app restart for native services and preserve rollback.
 4. If the implementation removes `trip-filedrop`'s direct port or adds `proxy-public`, treat that as a separate controlled container recreation and record the exact command before executing it.
 5. Validate each route with LAN Host headers, confirm no route exists for databases or Hermes model/gateway listeners, and verify that Traefik is listening only on the intended internal interface/port.

@@ -577,7 +577,7 @@ def handle_download(content: bytes | None = None, *,
 
 
 def build_container_command(config: ScannerConfig, target: ValidatedTarget,
-                            output_dir: Path, target_file: Path, *,
+                            output_dir: Path, target_file: Path, hosts_file: Path | None = None, *,
                             job_id: str | uuid.UUID | None = None
                             ) -> list[str]:
     """Build a disposable, address-pinned worker in the PIA namespace."""
@@ -609,6 +609,19 @@ def build_container_command(config: ScannerConfig, target: ValidatedTarget,
             != (config.worker_uid, config.worker_gid)
             or target_metadata.st_mode & 0o777 != 0o600):
         raise ScanPolicyError("target file must be mode 0600 and owned by the worker UID/GID")
+    if hosts_file is None:
+        raise ScanPolicyError("live container jobs require an address-pinned hosts file")
+    try:
+        resolved_hosts_file = hosts_file.resolve(strict=True)
+        hosts_metadata = resolved_hosts_file.stat()
+    except OSError as exc:
+        raise ScanPolicyError("hosts file could not be resolved safely") from exc
+    if (hosts_file != resolved_hosts_file or not resolved_hosts_file.is_file()
+            or resolved_hosts_file.is_symlink()
+            or (hosts_metadata.st_uid, hosts_metadata.st_gid)
+            != (config.worker_uid, config.worker_gid)
+            or hosts_metadata.st_mode & 0o777 != 0o600):
+        raise ScanPolicyError("hosts file must be a canonical mode 0600 worker-owned file")
     name = container_name(job_id or output_dir.name)
     command = [
         config.docker_binary, "run", "--name", name, "--rm=false",
@@ -619,12 +632,8 @@ def build_container_command(config: ScannerConfig, target: ValidatedTarget,
         "--mount", f"type=bind,src={output_dir},dst=/output",
         "--mount", (f"type=bind,src={resolved_target_file},"
                     "dst=/run/pte/target-url,readonly"),
+        "--mount", f"type=bind,src={resolved_hosts_file},dst=/etc/hosts,readonly",
     ]
-    # Docker's hosts entry pins every preflight-approved answer. The sidecar
-    # firewall remains the independent control for redirects and all other
-    # private/LAN/link-local/metadata destinations.
-    for address in target.resolved_addresses:
-        command.extend(["--add-host", f"{target.hostname}:{address}"])
     command.extend([config.image, "scan", "--target-file", "/run/pte/target-url",
                     "--output", "/output"])
     return command
@@ -657,6 +666,32 @@ def _create_target_file(target_url: str, output_dir: Path, *,
     return path.resolve(strict=True)
 
 
+def _create_hosts_file(target: ValidatedTarget, output_dir: Path, *,
+                       job_id: str | uuid.UUID, worker_uid: int,
+                       worker_gid: int) -> Path:
+    """Create a private hosts mount because Docker forbids --add-host here."""
+    path = output_dir.parent / f".pte-hosts-{uuid.UUID(str(job_id)).hex}"
+    descriptor: int | None = None
+    lines = ["127.0.0.1 localhost", "::1 localhost"]
+    lines.extend(f"{address} {target.hostname}" for address in target.resolved_addresses)
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.fchown(descriptor, worker_uid, worker_gid)
+        os.fchmod(descriptor, 0o600)
+        os.write(descriptor, ("\n".join(lines) + "\n").encode("ascii"))
+        os.fsync(descriptor)
+    except (OSError, ValueError, UnicodeError) as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+            descriptor = None
+        path.unlink(missing_ok=True)
+        raise ScanPolicyError("secure hosts file could not be created") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return path.resolve(strict=True)
+
+
 def run_live_scan(target_url: str, output_dir: Path, *, job_id: str | uuid.UUID,
                   config: ScannerConfig, runner: "DockerRunner | None" = None,
                   resolver: Resolver | None = None,
@@ -673,13 +708,18 @@ def run_live_scan(target_url: str, output_dir: Path, *, job_id: str | uuid.UUID,
         target.url, output_dir, job_id=job_id,
         worker_uid=config.worker_uid, worker_gid=config.worker_gid,
     )
+    hosts_file = _create_hosts_file(
+        target, output_dir, job_id=job_id,
+        worker_uid=config.worker_uid, worker_gid=config.worker_gid,
+    )
     try:
         command = build_container_command(
-            config, target, output_dir, target_file, job_id=job_id)
+            config, target, output_dir, target_file, hosts_file, job_id=job_id)
         (runner or DockerRunner()).run(command, timeout_seconds=config.timeout_seconds,
                                        kill_grace_seconds=config.kill_grace_seconds)
     finally:
         target_file.unlink(missing_ok=True)
+        hosts_file.unlink(missing_ok=True)
     artifacts: list[ScanArtifact] = []
     kinds = {"screenshot.png": ("screenshot_capture", "image/png"),
              "dom.html": ("dom_snapshot", "text/html"),

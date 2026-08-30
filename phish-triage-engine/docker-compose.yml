@@ -27,12 +27,17 @@ services:
     cap_add: ["NET_ADMIN"]
     devices: ["/dev/net/tun:/dev/net/tun"]
     security_opt: ["no-new-privileges:true"]
+    # The scanner shares this namespace and therefore this resolver file.
+    # A bind mount is required because Compose `dns` still exposes 127.0.0.11.
+    environment:
+      PTE_VPN_DNS_RESOLVERS: 1.1.1.1 1.0.0.1
     read_only: true
     tmpfs:
       - /run:size=1m,mode=0755
       - /tmp:size=1m,mode=1777
     restart: "no"
     volumes:
+      - ./docker/vpn-sidecar/resolv.conf:/etc/resolv.conf:ro
       - ${PTE_VPN_OVPN_PATH:?set absolute OVPN path}:/vpn/operator.ovpn:ro
       - ${PTE_VPN_AUTH_FILE:?set absolute auth path}:/vpn/operator.auth:ro
     healthcheck:

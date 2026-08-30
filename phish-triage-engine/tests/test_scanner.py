@@ -176,7 +176,10 @@ def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
     target_file = tmp_path / "target-url"
     target_file.write_text("https://example.test/")
     target_file.chmod(0o600)
-    command = build_container_command(local, target, output, target_file,
+    hosts_file = tmp_path / "hosts"
+    hosts_file.write_text("8.8.8.8 example.test\n")
+    hosts_file.chmod(0o600)
+    command = build_container_command(local, target, output, target_file, hosts_file,
                                       job_id=uuid.uuid4())
     assert ["--network", "container:pia-vpn"] == command[
         command.index("--network"):command.index("--network") + 2]
@@ -185,7 +188,8 @@ def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
     assert command[command.index("--security-opt") + 1] == "no-new-privileges"
     assert command[command.index("--tmpfs") + 1].startswith("/tmp:rw,noexec,nosuid,nodev,")
     assert not any(option in command for option in ("-p", "--publish", "--privileged"))
-    assert "example.test:8.8.8.8" in command
+    assert "--add-host" not in command
+    assert any("dst=/etc/hosts,readonly" in value for value in command)
 
 
 def test_live_scan_hands_query_token_through_read_only_target_file(tmp_path):
@@ -213,6 +217,7 @@ def test_live_scan_hands_query_token_through_read_only_target_file(tmp_path):
     assert "--target" not in command
     assert command[command.index("--target-file") + 1] == "/run/pte/target-url"
     mounts = [command[index + 1] for index, value in enumerate(command) if value == "--mount"]
+    assert any("dst=/etc/hosts,readonly" in mount for mount in mounts)
     target_mount = next(mount for mount in mounts if "dst=/run/pte/target-url" in mount)
     assert target_mount.endswith(",readonly")
     assert not (tmp_path / f".pte-target-{job_id.hex}").exists()

@@ -52,13 +52,13 @@ def test_profile_without_legacy_compression_explicitly_disables_it(tmp_path):
 
 def test_remote_literal_is_pinned_in_ephemeral_profile(tmp_path):
     profile = tmp_path / "runtime.ovpn"
-    profile.write_text("client\nremote 192.0.2.10 1198 udp\n")
+    profile.write_text("client\nremote 8.8.8.8 1198 udp\n")
     completed = subprocess.run([
         "sh", str(ROOT / "docker/vpn-sidecar/pin-remotes.sh"), str(profile),
     ], capture_output=True, text=True, check=False)
     assert completed.returncode == 0
     assert completed.stdout == completed.stderr == ""
-    assert profile.read_text() == "client\nremote 192.0.2.10 1198 udp\n"
+    assert profile.read_text() == "client\nremote 8.8.8.8 1198 udp\n"
     assert profile.stat().st_mode & 0o777 == 0o600
 
 
@@ -91,6 +91,43 @@ def test_sidecar_build_pins_reviewable_xor_client():
     assert "TUNNELBLICK_COMMIT=c9c73dca6c99" in dockerfile
     assert "tunnelblick-openvpn_xorpatch" in dockerfile
     assert "COPY --from=openvpn-build /stage/usr/sbin/openvpn" in dockerfile
+
+
+def test_vpn_namespace_owns_explicit_public_resolvers():
+    compose = (ROOT / "docker-compose.yml").read_text()
+    resolver_file = (ROOT / "docker/vpn-sidecar/resolv.conf").read_text()
+    assert "./docker/vpn-sidecar/resolv.conf:/etc/resolv.conf:ro" in compose
+    assert "PTE_VPN_DNS_RESOLVERS: 1.1.1.1 1.0.0.1" in compose
+    assert resolver_file == "nameserver 1.1.1.1\nnameserver 1.0.0.1\n"
+    assert "127.0.0.11" not in resolver_file
+
+
+def test_sidecar_dns_firewall_contract_is_fail_closed():
+    entrypoint = (ROOT / "docker/vpn-sidecar/entrypoint.sh").read_text()
+    tunnel_up = (ROOT / "docker/vpn-sidecar/up.sh").read_text()
+    drop_at = entrypoint.index("iptables -P OUTPUT DROP")
+    dns_at = entrypoint.index("--dport 53")
+    pin_at = entrypoint.index('vpn-pin-remotes "$RUNTIME_OVPN"')
+    remote_at = entrypoint.index('awk \'$1 == "remote"')
+    assert drop_at < dns_at < pin_at < remote_at
+    assert '1.1.1.1|1.0.0.1' in entrypoint
+    assert '-o eth0 -d "$resolver"' in entrypoint
+    assert "iptables -F OUTPUT" in tunnel_up
+    assert "iptables -A OUTPUT -o tun0 -j ACCEPT" in tunnel_up
+    assert "--dport 53" not in tunnel_up
+
+
+def test_remote_pinning_uses_only_configured_dns_and_rejects_private_literals(tmp_path):
+    script = (ROOT / "docker/vpn-sidecar/pin-remotes.sh").read_text()
+    assert '"@$resolver" "$host" A' in script
+    assert "getent" not in script
+    profile = tmp_path / "runtime.ovpn"
+    profile.write_text("client\nremote 192.168.1.1 1198 udp\n")
+    completed = subprocess.run([
+        "sh", str(ROOT / "docker/vpn-sidecar/pin-remotes.sh"), str(profile),
+    ], capture_output=True, text=True, check=False)
+    assert completed.returncode != 0
+    assert completed.stdout == completed.stderr == ""
 
 
 def test_scanner_image_declares_non_root_contract_and_redacted_failure(tmp_path):

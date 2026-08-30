@@ -207,10 +207,17 @@ client with Tunnelblick's XOR patches pinned to commit
 `c9c73dca6c99afbba14b53e291b18f044210a1b5`, plus exact runtime package
 versions and a project-owned entrypoint whose OUTPUT/FORWARD policies are
 DROP before OpenVPN starts. During single-process bootstrap, the entrypoint
-resolves only the configured VPN remote names, pins those addresses into the
-ephemeral runtime profile, then installs DROP policies before OpenVPN starts.
-Before the tunnel is up, only those pinned VPN server endpoints are allowed.
-After `tun0` is up, non-tunnel
+installs DROP policies first, permits DNS only to the namespace's explicit
+public resolvers (`1.1.1.1` and `1.0.0.1` by default), resolves only the
+configured VPN remote names, pins those addresses into the ephemeral runtime
+profile, rejects non-public remote answers, and then permits only those pinned
+VPN endpoints. The `pia-vpn`
+service owns `/etc/resolv.conf`; a scanner sharing its namespace never inherits
+Docker's `127.0.0.11` resolver. Compose bind-mounts the reviewed resolver file
+read-only because its `dns` setting alone would still expose Docker's embedded
+resolver. After `tun0` is up, all provisional `eth0` DNS and
+endpoint exceptions are flushed, so the configured resolvers are reachable
+only through `tun0`; there is no Docker or host resolver fallback. Non-tunnel
 egress and IPv6 are denied, and IPv4 private/RFC1918, loopback, link-local,
 CGNAT, multicast, reserved/documentation, and metadata destinations are
 rejected before the general `tun0` allow. Those namespace rules cover initial
@@ -229,7 +236,10 @@ Do not mount `/var/run/docker.sock` into any worker or scanner container. The
 per-job container has `--network container:pia-vpn` (the Docker CLI equivalent
 of `network_mode: service:pia-vpn`), no published port, read-only root, a
 bounded tmpfs, all capabilities dropped, `no-new-privileges`, and the declared
-non-root UID/GID. Start the sidecar, then start the host worker with explicit
+non-root UID/GID. The preflight-approved target addresses are passed through a
+private mode-`0600`, read-only `/etc/hosts` bind mount because Docker rejects
+`--add-host` together with container namespace sharing. Start the sidecar, then
+start the host worker with explicit
 live settings:
 
 ```bash

@@ -11,6 +11,7 @@ import sys
 import urllib.parse
 
 APPROVED = ("screenshot.png", "dom.html", "network.har", "redirect-chain.json")
+CHROMIUM_HOME = pathlib.Path("/tmp/pte-chromium-home")
 
 
 def atomic_write(path: pathlib.Path, data: bytes) -> None:
@@ -35,17 +36,26 @@ def scan(target_file: pathlib.Path, output: pathlib.Path) -> int:
         raise ValueError("output must be an empty directory")
 
     screenshot = output / "screenshot.png"
+    CHROMIUM_HOME.mkdir(mode=0o700)
     command = [
         "/usr/bin/chromium-browser", "--headless", "--disable-gpu", "--no-sandbox",
         "--disable-dev-shm-usage", "--disable-background-networking",
         "--disable-component-update", "--disable-default-apps", "--disable-extensions",
         "--disable-sync", "--metrics-recording-only", "--no-first-run",
         "--safebrowsing-disable-auto-update", "--disable-features=Translate",
+        f"--user-data-dir={CHROMIUM_HOME / 'profile'}",
+        f"--disk-cache-dir={CHROMIUM_HOME / 'cache'}",
         "--window-size=1280,960", "--timeout=15000", f"--screenshot={screenshot}",
         "--dump-dom", target,
     ]
+    browser_env = {
+        "HOME": str(CHROMIUM_HOME),
+        "TMPDIR": "/tmp",
+        "XDG_CACHE_HOME": str(CHROMIUM_HOME / "cache"),
+        "XDG_CONFIG_HOME": str(CHROMIUM_HOME / "config"),
+    }
     completed = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                               timeout=30, check=False)
+                               timeout=30, check=False, env=browser_env)
     if completed.returncode != 0 or not screenshot.is_file() or not completed.stdout:
         raise RuntimeError("browser capture failed")
     os.chmod(screenshot, 0o600)

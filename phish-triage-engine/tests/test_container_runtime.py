@@ -1,5 +1,6 @@
 """Container entrypoint compatibility and scanner-image contract tests."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -7,6 +8,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _load_scanner_runtime():
+    path = ROOT / "docker/scanner/scanner.py"
+    spec = importlib.util.spec_from_file_location("scanner_runtime", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _convert(tmp_path: Path, content: str):
@@ -98,3 +108,34 @@ def test_scanner_image_declares_non_root_contract_and_redacted_failure(tmp_path)
     assert completed.stdout == ""
     assert completed.stderr == "scanner failed safely\n"
     assert "secret-token" not in completed.stderr
+
+
+def test_scanner_gives_chromium_a_writable_disposable_home(tmp_path, monkeypatch):
+    runtime = _load_scanner_runtime()
+    target = tmp_path / "target"
+    output = tmp_path / "output"
+    output.mkdir()
+    target.write_text("https://example.com/")
+    chromium_home = tmp_path / "chromium-home"
+    monkeypatch.setattr(runtime, "CHROMIUM_HOME", chromium_home)
+
+    def run(command, **kwargs):
+        assert kwargs["env"] == {
+            "HOME": str(chromium_home),
+            "TMPDIR": "/tmp",
+            "XDG_CACHE_HOME": str(chromium_home / "cache"),
+            "XDG_CONFIG_HOME": str(chromium_home / "config"),
+        }
+        assert f"--user-data-dir={chromium_home / 'profile'}" in command
+        assert f"--disk-cache-dir={chromium_home / 'cache'}" in command
+        screenshot_arg = next(value for value in command if value.startswith("--screenshot="))
+        Path(screenshot_arg.removeprefix("--screenshot=")).write_bytes(b"png")
+        return subprocess.CompletedProcess(command, 0, stdout=b"<html></html>")
+
+    monkeypatch.setattr(runtime.subprocess, "run", run)
+    assert runtime.scan(target, output) == 0
+    assert chromium_home.stat().st_mode & 0o777 == 0o700
+    manifest = json.loads((output / "scan-manifest.json").read_text())
+    assert manifest["forms_submitted"] is False
+    assert manifest["credentials_available"] is False
+    assert manifest["downloads"] == "blocked"

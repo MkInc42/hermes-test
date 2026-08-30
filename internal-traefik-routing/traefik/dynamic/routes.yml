@@ -1,0 +1,85 @@
+http:
+  middlewares:
+    internal-only:
+      ipAllowList:
+        sourceRange:
+          # IPv4 loopback and RFC1918 private address space.
+          - "127.0.0.0/8"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+          # IPv6 loopback and unique-local address space.
+          - "::1/128"
+          - "fc00::/7"
+
+  routers:
+    phish-api-same-origin:
+      entryPoints: [web]
+      rule: >-
+        Host(`phish.192-168-1-115.sslip.io`) &&
+        (PathPrefix(`/v1`) || Path(`/health`) || PathPrefix(`/docs`) ||
+        PathPrefix(`/redoc`) || Path(`/openapi.json`))
+      priority: 200
+      middlewares: [internal-only]
+      service: phish-api-native
+
+    phish-ui:
+      entryPoints: [web]
+      rule: "Host(`phish.192-168-1-115.sslip.io`)"
+      priority: 100
+      middlewares: [internal-only]
+      service: phish-ui-native
+
+    phish-api:
+      entryPoints: [web]
+      rule: "Host(`phish-api.192-168-1-115.sslip.io`)"
+      middlewares: [internal-only]
+      service: phish-api-native
+
+    filedrop:
+      entryPoints: [web]
+      rule: "Host(`filedrop.192-168-1-115.sslip.io`)"
+      middlewares: [internal-only]
+      service: trip-filedrop-native
+
+    intake:
+      entryPoints: [web]
+      rule: "Host(`intake.192-168-1-115.sslip.io`)"
+      middlewares: [internal-only]
+      service: intake-docker
+
+    traefik-dashboard:
+      entryPoints: [web]
+      rule: "Host(`traefik.192-168-1-115.sslip.io`)"
+      middlewares: [internal-only]
+      service: api@internal
+
+  services:
+    # Transitional host-gateway routes. They preserve current processes and ports;
+    # replace them with Docker-provider labels after controlled containerization.
+    phish-ui-native:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8088"
+
+    phish-api-native:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8012"
+
+    hermes-dashboard-native:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:9119"
+
+    trip-filedrop-native:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8787"
+
+    # Existing intake-api is already on proxy-public. This file-provider service
+    # avoids changing its labels, published port, or container lifecycle.
+    intake-docker:
+      loadBalancer:
+        servers:
+          - url: "http://intake-api:8000"

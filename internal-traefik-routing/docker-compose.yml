@@ -1,0 +1,40 @@
+name: internal-traefik-routing-192-168-1-115
+
+services:
+  lan-traefik:
+    image: traefik:v3.3.6
+    restart: unless-stopped
+    # No container_name: Compose generates a project-scoped, collision-resistant name.
+    user: "65532:${DOCKER_SOCKET_GID:-999}"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777,nosuid,nodev,noexec
+    ports:
+      # The host bind is deliberately IPv4 LAN-only. Port 8080 is non-privileged
+      # inside the container, so Traefik does not need root or CAP_NET_BIND_SERVICE.
+      - "192.168.1.115:80:8080"
+    extra_hosts:
+      # Transitional native backends only; remove this after they are containerized.
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./traefik/static.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      # Required by the Docker provider. See README.md for the socket/GID caveat.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy-public
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  proxy-public:
+    external: true
+    name: proxy-public

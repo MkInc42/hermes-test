@@ -216,7 +216,7 @@ legend { margin-bottom: .55rem; padding: 0; color: #dce5ef; font-size: .84rem; f
 input:focus-visible, textarea:focus-visible, button:focus-visible, summary:focus-visible, a:focus-visible, .drop-zone:focus-within {
   outline: 3px solid var(--focus); outline-offset: 2px;
 }
-input:invalid:not(:focus):not(:placeholder-shown), textarea:invalid:not(:focus):not(:placeholder-shown) { border-color: var(--danger); }
+input:user-invalid, textarea:user-invalid { border-color: var(--danger); }
 
 @media (min-width: 42rem) {
   .header-inner, .main-content { padding-inline: 1.5rem; }

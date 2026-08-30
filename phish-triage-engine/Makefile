@@ -1,4 +1,4 @@
-.PHONY: dev-up migrate test run-api enrich-fixture scan-proof scanner-prepare
+.PHONY: dev-up migrate test run-api enrich-fixture scan-proof scanner-prepare worker-once worker
 
 dev-up:
 	docker compose up -d --wait db
@@ -23,3 +23,10 @@ scan-proof:
 # Usage: make scanner-prepare JOB_ID=<uuid> OUTPUT_ROOT=./tmp/scanner-jobs
 scanner-prepare:
 	poetry run python -m pte scanner-prepare --job-id "$(JOB_ID)" --output-root "$(OUTPUT_ROOT)"
+
+# Tenant-scoped safe/offline queue worker. Usage: make worker-once TENANT_UID=1234
+worker-once:
+	poetry run pte-worker --tenant-uid "$(TENANT_UID)" --once
+
+worker:
+	poetry run pte-worker --tenant-uid "$(TENANT_UID)"

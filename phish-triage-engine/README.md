@@ -41,6 +41,64 @@ Uploads use multipart endpoints `/v1/intake/email/upload` and `/v1/intake/screen
 
 Run verification with `poetry run pytest` and `poetry run python -m compileall -q pte tests`. Tests use the existing local Postgres fixture and create the disposable `phish_triage_test` database.
 
+## Automatic queued-job worker
+
+`pte-worker` polls and atomically claims queued jobs for one explicit tenant.
+Multiple workers may poll the same tenant: claims use row locks with `SKIP
+LOCKED` and durably move a job to `normalizing`, so only one process can consume
+it. The safe default pipeline is offline-only. Its scanner call is limited to
+the fixed `https://example.invalid/benign` network-free proof; a submitted URL
+is never passed to a scanner. Before scan artifacts or submitted-URL-derived
+data are persisted, the worker requires returned policy evidence of
+`network_io=false` and `route_mode=dry-run`, with the existing `direct-dev`
+dry-proof route. Otherwise it fails closed. The accepted route and policy are
+recorded in the tenant-scoped `scan_completed` event. The worker then persists
+any derivable hostname indicator and performs deterministic local
+enrichment/risk scoring with external providers marked unavailable, and calls
+`persist_report_bundle` for canonical JSON and Markdown report artifacts.
+
+Run one polling attempt (including a clean exit when the queue is empty):
+
+```bash
+PTE_ARTIFACT_ROOT=./artifacts poetry run pte-worker --tenant-uid 1234 --once
+# Equivalent: make worker-once TENANT_UID=1234
+```
+
+Run continuously, or stop after a bounded number of consumed jobs:
+
+```bash
+poetry run pte-worker --tenant-uid 1234 --poll-interval 2
+poetry run pte-worker --tenant-uid 1234 --max-jobs 10
+```
+
+Controls also have environment equivalents: `PTE_WORKER_TENANT_UID`,
+`PTE_WORKER_POLL_INTERVAL`, `PTE_WORKER_MAX_JOBS`, `PTE_WORKER_ONCE`,
+`PTE_WORKER_DRY_SCAN`, and `PTE_WORKER_OUTPUT_ROOT`. `--no-dry-scan` disables
+only the fixed offline proof; it does not enable live scanning. No worker mode
+performs live navigation or network probes, hostile browsing, submits
+credentials, or assumes unavailable external
+reputation results. Console output contains only tenant/job identifiers and
+counts, never raw indicators, email content, artifact paths, or exception text.
+
+A future live path is not enabled here. Disposable live scan containers must
+remain fail-closed unless they have verified `pia-vpn` sidecar readiness, proven
+their egress through that VPN, and use the approved `pia-sidecar` route. This
+project does not claim or synthesize a sidecar health or egress probe.
+
+Failures become terminal `blocked` or `failed` states with conservative reason
+codes in tenant-scoped audit events. Polling never retries them automatically.
+After correcting the local/input problem, an operator may explicitly requeue
+one job; the normal atomic claim path then handles the retry:
+
+```bash
+poetry run pte-worker --tenant-uid 1234 --retry-job-id JOB_UUID
+```
+
+The per-job dry-scan output directory is deliberately single-use. Before an
+explicit retry of a job that reached scan setup, move or remove that
+project-local directory under `PTE_WORKER_OUTPUT_ROOT`; immutable artifacts in
+`PTE_ARTIFACT_ROOT` are idempotent and content-addressed.
+
 ## Analyst report artifacts
 
 `pte.reports` assembles schema-versioned analyst content packs from the canonical,

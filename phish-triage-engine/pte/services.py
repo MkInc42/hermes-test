@@ -245,6 +245,120 @@ def set_job_state(
         return dict(row)
 
 
+def claim_queued_job(
+    cfg: DbConfig,
+    *,
+    tenant_uid: str,
+    actor: str = "pipeline-worker",
+) -> dict[str, Any] | None:
+    """Atomically claim the next queued job for one tenant.
+
+    ``SKIP LOCKED`` lets multiple worker processes poll safely.  Moving the row
+    to ``normalizing`` in the same transaction makes the claim durable before
+    any artifact work starts, so a job cannot be processed twice.
+    """
+    tenant_uid = require_tenant(tenant_uid)
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH candidate AS (
+                SELECT job_id
+                FROM jobs
+                WHERE tenant_uid = %s AND state = 'queued'
+                ORDER BY priority ASC, queued_at ASC, created_at ASC
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            UPDATE jobs AS j
+            SET state = 'normalizing', started_at = COALESCE(started_at, now())
+            FROM candidate
+            WHERE j.job_id = candidate.job_id AND j.tenant_uid = %s
+            RETURNING j.job_id, j.tenant_uid, j.submission_id, j.source_type,
+                      j.state, j.policy_decisions, j.started_at
+            """,
+            (tenant_uid, tenant_uid),
+        )
+        row = cur.fetchone()
+        if row is None:
+            conn.commit()
+            return None
+        cur.execute(
+            """INSERT INTO audit_events
+               (tenant_uid,job_id,actor,action,outcome,detail)
+               VALUES (%s,%s,%s,'job_state:normalizing','ok',%s)""",
+            (tenant_uid, row["job_id"], actor,
+             json.dumps({"reason_code": "queue_claimed"})),
+        )
+        conn.commit()
+        return dict(row)
+
+
+def record_job_failure(
+    cfg: DbConfig,
+    *,
+    tenant_uid: str,
+    job_id: uuid.UUID | str,
+    status: str,
+    reason_code: str,
+    actor: str = "pipeline-worker",
+) -> dict[str, Any]:
+    """Record a redacted terminal pipeline outcome without exception text."""
+    tenant_uid = require_tenant(tenant_uid)
+    if status not in {"blocked", "failed"}:
+        raise ValidationError("pipeline failure status must be blocked or failed")
+    if (not isinstance(reason_code, str) or not reason_code or len(reason_code) > 80
+            or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for ch in reason_code)):
+        raise ValidationError("pipeline reason_code must be a conservative identifier")
+    detail = {"reason_code": reason_code, "terminal_status": status, "retryable": True}
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE jobs SET state=%s,finished_at=now()"
+            " WHERE job_id=%s AND tenant_uid=%s"
+            " AND state NOT IN ('completed','blocked','failed','expired')"
+            " RETURNING job_id,state,finished_at",
+            (status, job_id, tenant_uid),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ValidationError("pipeline failure requires a nonterminal job")
+        cur.execute(
+            """INSERT INTO audit_events
+               (tenant_uid,job_id,actor,action,outcome,detail)
+               VALUES (%s,%s,%s,%s,%s,%s)""",
+            (tenant_uid, job_id, actor, f"job_state:{status}",
+             "denied" if status == "blocked" else "error", json.dumps(detail)),
+        )
+        conn.commit()
+        return dict(row)
+
+
+def requeue_terminal_job(
+    cfg: DbConfig, *, tenant_uid: str, job_id: uuid.UUID | str,
+    actor: str = "pipeline-operator",
+) -> dict[str, Any]:
+    """Explicitly retry one failed/blocked job; completed jobs are immutable."""
+    tenant_uid = require_tenant(tenant_uid)
+    with connect(cfg) as conn, conn.cursor() as cur:
+        cur.execute(
+            """UPDATE jobs SET state='queued',queued_at=now(),started_at=NULL,finished_at=NULL
+               WHERE job_id=%s AND tenant_uid=%s AND state IN ('failed','blocked')
+               RETURNING job_id,state,queued_at""",
+            (job_id, tenant_uid),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise ValidationError("only failed or blocked jobs can be requeued")
+        cur.execute(
+            """INSERT INTO audit_events
+               (tenant_uid,job_id,actor,action,outcome,detail)
+               VALUES (%s,%s,%s,'job_state:queued','ok',%s)""",
+            (tenant_uid, job_id, actor,
+             json.dumps({"reason_code": "operator_retry"})),
+        )
+        conn.commit()
+        return dict(row)
+
+
 # ---------------------------------------------------------------------------
 # Artifacts
 
@@ -582,6 +696,7 @@ def persist_scan_completion(
     artifacts: list[dict[str, Any]],
     storage_writer: Callable[[str, bytes], str],
     actor: str = "scanner-runner",
+    completion_state: str = "completed",
 ) -> dict[str, Any]:
     """Atomically link completed scan output and finish its tenant-scoped job.
 
@@ -590,6 +705,8 @@ def persist_scan_completion(
     rolled-back attempt are safe, immutable retry candidates.
     """
     tenant_uid = require_tenant(tenant_uid)
+    if completion_state not in {"completed", "analyzing"}:
+        raise ValidationError("scan completion state must be completed or analyzing")
     if route_label not in {"direct-dev", "pia-sidecar-required"}:
         raise ValidationError("completed scans require an approved route label")
     allowed_kinds = {"screenshot_capture", "http_transcript", "redirect_chain",
@@ -649,18 +766,19 @@ def persist_scan_completion(
             (tenant_uid, job_id, job["source_type"], json.dumps(detail)),
         )
         cur.execute(
-            "UPDATE jobs SET state='completed',finished_at=now()"
+            "UPDATE jobs SET state=%s,finished_at=CASE WHEN %s='completed' THEN now() ELSE NULL END"
             " WHERE job_id=%s AND tenant_uid=%s",
-            (job_id, tenant_uid),
+            (completion_state, completion_state, job_id, tenant_uid),
         )
         cur.execute(
             """INSERT INTO audit_events
                (tenant_uid,job_id,actor,action,outcome,detail)
-               VALUES (%s,%s,%s,'job_state:completed','ok',%s)""",
-            (tenant_uid, job_id, actor, json.dumps({"reason": "scan artifacts persisted"})),
+               VALUES (%s,%s,%s,%s,'ok',%s)""",
+            (tenant_uid, job_id, actor, f"job_state:{completion_state}",
+             json.dumps({"reason": "scan artifacts persisted"})),
         )
         conn.commit()
-        return {"artifacts": rows, "event": event, "state": "completed"}
+        return {"artifacts": rows, "event": event, "state": completion_state}
 
 
 def persist_scan_failure(

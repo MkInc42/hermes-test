@@ -445,10 +445,18 @@ def persist_enrichment_job(
     contract: dict[str, Any],
     artifact_store: ArtifactStore | None = None,
     actor: str = WORKER_NAME,
+    completion_state: str = "completed",
 ) -> dict[str, Any]:
-    """Persist enrichment artifact, observations, risk score, and source status."""
+    """Persist enrichment data and optionally leave the job ready for reporting.
+
+    ``completed`` preserves the original one-shot behavior. Pipeline callers
+    that still need to persist a report can request ``analyzing`` so a later
+    failure remains recordable as a terminal failure.
+    """
     bundle = get_job_bundle(cfg, tenant_uid, job_id)
     submission_id = bundle["job"]["submission_id"]
+    if completion_state not in {"completed", "analyzing"}:
+        raise ValidationError("enrichment completion state must be completed or analyzing")
     if contract.get("schema_version") != SCHEMA_VERSION:
         raise ValidationError("unsupported enrichment schema version")
     data = canonical_json(contract)
@@ -478,7 +486,8 @@ def persist_enrichment_job(
         {"artifact_sha256": raw["sha256"], "risk_score_id": persisted_risk["risk_score_id"],
          "classification": risk["classification"], "limitations": risk["limitations"]},
     )
-    set_job_state(cfg, tenant_uid, job_id, "completed", actor=actor, reason="enrichment persisted")
+    set_job_state(cfg, tenant_uid, job_id, completion_state, actor=actor,
+                  reason="enrichment persisted")
     return {
         "artifact": raw,
         "observations": observations,

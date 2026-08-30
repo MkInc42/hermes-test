@@ -320,6 +320,17 @@ def test_enrichment_persistence_writes_artifact_observations_risk_and_source_sta
     assert (tmp_path / "store" / pointer).is_file()
 
 
+def test_enrichment_persistence_can_leave_job_analyzing(db, tenant_a, tmp_path):
+    submission = create_submission(db, tenant_a, "ocr_text_message", envelope={"fixture": "fedex"})
+    job = create_job(db, tenant_a, submission["submission_id"], "ocr_text_message")
+    persist_enrichment_job(
+        db, tenant_uid=tenant_a, job_id=job["job_id"], contract=_fedex_contract(),
+        artifact_store=ArtifactStore(tmp_path / "store"), completion_state="analyzing",
+    )
+
+    assert get_job_bundle(db, tenant_a, job["job_id"])["job"]["state"] == "analyzing"
+
+
 def test_one_shot_safe_worker_loads_queued_job_and_persists_to_postgres(db, tenant_a, tmp_path):
     submission = create_submission(db, tenant_a, "raw_url", envelope={"mode": "safe-local"})
     job = create_job(db, tenant_a, submission["submission_id"], "raw_url")

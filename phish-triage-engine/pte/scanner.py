@@ -195,6 +195,8 @@ class ScannerConfig:
     docker_binary: str = "docker"
     worker_uid: int = 65532
     worker_gid: int = 65532
+    tunnel_interface: str = "tun0"
+    egress_url: str = "https://api.ipify.org"
     vpn: VpnRuntimeConfig | None = None
 
     @classmethod
@@ -220,6 +222,9 @@ class ScannerConfig:
                 docker_binary=environ.get(f"{prefix}DOCKER_BINARY", cls.docker_binary),
                 worker_uid=int(environ.get(f"{prefix}WORKER_UID", cls.worker_uid)),
                 worker_gid=int(environ.get(f"{prefix}WORKER_GID", cls.worker_gid)),
+                tunnel_interface=environ.get(f"{prefix}TUNNEL_INTERFACE",
+                                             cls.tunnel_interface),
+                egress_url=environ.get(f"{prefix}EGRESS_URL", cls.egress_url),
                 vpn=VpnRuntimeConfig.from_env(environ, validate_file=vpn_file_validator),
             )
         except ScanPolicyError:
@@ -231,7 +236,7 @@ class ScannerConfig:
         if self.timeout_seconds <= 0 or self.kill_grace_seconds < 0:
             raise ScanPolicyError("worker timeouts must be positive")
         if (not self.image.strip() or not self.pia_service.strip()
-                or not self.docker_binary.strip()):
+                or not self.docker_binary.strip() or not self.egress_url.strip()):
             raise ScanPolicyError("container image, PIA service, and Docker binary are required")
         if any(port < 1 or port > 65535 for port in self.allowed_non_default_ports):
             raise ScanPolicyError("allowlisted ports must be within 1..65535")
@@ -277,12 +282,72 @@ class ScanResult:
 
 
 Resolver = Callable[..., Sequence[tuple[object, ...]]]
+CommandAdapter = Callable[[Sequence[str], float], subprocess.CompletedProcess[bytes]]
 
 _SAFE_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _BLOCKED_HOSTNAMES = frozenset({
     "instance-data", "localhost", "metadata", "metadata.google.internal",
 })
 _DOCKER_CLEANUP_TIMEOUT_SECONDS = 5.0
+_READINESS_TIMEOUT_SECONDS = 5.0
+
+
+@dataclass(frozen=True)
+class VpnReadiness:
+    """Non-secret proof collected from the scanner/VPN network namespace."""
+
+    interface: str
+    egress_address: str
+
+
+def _run_readiness_command(command: Sequence[str], timeout: float
+                           ) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(list(command), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          check=False, timeout=timeout)
+
+
+def require_vpn_ready(*, interface: str = "tun0",
+                      egress_url: str = "https://api.ipify.org",
+                      command_adapter: CommandAdapter = _run_readiness_command,
+                      command_prefix: Sequence[str] = (),
+                      timeout_seconds: float = _READINESS_TIMEOUT_SECONDS) -> VpnReadiness:
+    """Fail closed unless this namespace has a tunnel route and public egress.
+
+    This function must run from the namespace used by the live scanner.  Its
+    adapters are injectable so tests never need a real tunnel or network.
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,32}", interface):
+        raise ScanPolicyError("VPN tunnel interface is invalid")
+    try:
+        parsed_egress = urlsplit(egress_url)
+        if (parsed_egress.scheme != "https" or not parsed_egress.hostname
+                or parsed_egress.username is not None or parsed_egress.password is not None
+                or parsed_egress.port not in (None, 443)):
+            raise ScanPolicyError("VPN egress readiness URL is invalid")
+    except ValueError:
+        raise ScanPolicyError("VPN egress readiness URL is invalid") from None
+    prefix = list(command_prefix)
+    checks = (["test", "-d", f"/sys/class/net/{interface}"],
+              ["ip", "route", "get", "1.1.1.1"],
+              ["vpn-egress-check", egress_url])
+    try:
+        completed = None
+        for index, command in enumerate(checks):
+            completed = command_adapter([*prefix, *command], timeout_seconds)
+            if completed.returncode != 0:
+                raise ScanPolicyError("VPN readiness check failed")
+            if index == 1 and f" dev {interface} ".encode() not in completed.stdout:
+                raise ScanPolicyError("VPN default route is unavailable")
+        assert completed is not None
+        raw_address = completed.stdout.decode("ascii").strip()
+        address = ipaddress.ip_address(raw_address)
+    except ScanPolicyError:
+        raise
+    except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
+        raise ScanPolicyError("VPN readiness check failed") from None
+    if _address_is_blocked(address):
+        raise ScanPolicyError("VPN egress identity is not a public address")
+    return VpnReadiness(interface=interface, egress_address=str(address))
 
 
 def container_name(job_id: str | uuid.UUID) -> str:
@@ -337,10 +402,12 @@ def runtime_contract(config: ScannerConfig, job_id: str | uuid.UUID,
             "ovpn_path": str(config.vpn.ovpn_path),
             "auth_mode": config.vpn.auth_mode.value,
         },
-        "live_enabled": False,
+        "live_enabled": True,
         "required_before_live": [
+            "tunnel-interface-and-default-route",
+            "public-external-egress-identity",
             "pinned-public-address-navigation",
-            "namespace-private-egress-blocking",
+            "sidecar-firewall-private-egress-blocking",
         ],
     }
 
@@ -420,6 +487,31 @@ def validate_url(target: str, *, allowed_non_default_ports: frozenset[int] = fro
                            tuple(sorted(str(address) for address in addresses)))
 
 
+def _vpn_namespace_resolver(config: ScannerConfig) -> Resolver:
+    """Resolve through a public DNS server reachable only via the sidecar tunnel."""
+    def resolve(hostname: str, port: int, **_kwargs: object
+                ) -> Sequence[tuple[object, ...]]:
+        addresses: list[str] = []
+        for record_type in ("A", "AAAA"):
+            command = [config.docker_binary, "exec", config.pia_service, "dig", "+short",
+                       "+time=3", "+tries=1", "@1.1.1.1", hostname, record_type]
+            try:
+                completed = _run_readiness_command(command, _READINESS_TIMEOUT_SECONDS)
+            except (OSError, subprocess.TimeoutExpired):
+                raise OSError("VPN DNS preflight failed") from None
+            if completed.returncode != 0:
+                raise OSError("VPN DNS preflight failed")
+            for raw in completed.stdout.decode("ascii", errors="strict").splitlines():
+                try:
+                    address = ipaddress.ip_address(raw.strip())
+                except ValueError:
+                    continue
+                addresses.append(str(address))
+        return [(None, None, None, None, (address, port)) for address in addresses]
+
+    return resolve
+
+
 def create_job_output_dir(root: Path, job_id: str | uuid.UUID, *,
                           worker_uid: int | None = None,
                           worker_gid: int | None = None) -> Path:
@@ -485,15 +577,13 @@ def handle_download(content: bytes | None = None, *,
 
 
 def build_container_command(config: ScannerConfig, target: ValidatedTarget,
-                            output_dir: Path) -> list[str]:
-    """Refuse live construction until address-pinned egress exists.
-
-    PIA namespace sharing remains the intended route, but it is not itself an
-    egress security boundary: navigating the original hostname would permit a
-    second DNS answer to rebind the browser to a private address.
-    """
+                            output_dir: Path, *, job_id: str | uuid.UUID | None = None
+                            ) -> list[str]:
+    """Build a disposable, address-pinned worker in the PIA namespace."""
     if config.route_mode is not RouteMode.PIA_SIDECAR:
         raise ScanPolicyError("live container jobs require route_mode=pia-sidecar")
+    if config.vpn is None:
+        raise ScanPolicyError("live container jobs require VPN configuration")
     if not output_dir.is_absolute() or not output_dir.is_dir():
         raise ScanPolicyError("an existing absolute per-job output directory is required")
     try:
@@ -506,10 +596,57 @@ def build_container_command(config: ScannerConfig, target: ValidatedTarget,
     if ((metadata.st_uid, metadata.st_gid) != (config.worker_uid, config.worker_gid)
             or metadata.st_mode & 0o777 != 0o700):
         raise ScanPolicyError("job output must be mode 0700 and owned by the worker UID/GID")
-    raise ScanPolicyError(
-        "live container command construction is disabled until a fail-closed "
-        "address-pinned runtime egress control is implemented"
-    )
+    name = container_name(job_id or output_dir.name)
+    command = [
+        config.docker_binary, "run", "--name", name, "--rm=false",
+        "--network", f"container:{config.pia_service}", "--read-only",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--user", f"{config.worker_uid}:{config.worker_gid}",
+        "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m",
+        "--mount", f"type=bind,src={output_dir},dst=/output",
+    ]
+    # Docker's hosts entry pins every preflight-approved answer. The sidecar
+    # firewall remains the independent control for redirects and all other
+    # private/LAN/link-local/metadata destinations.
+    for address in target.resolved_addresses:
+        command.extend(["--add-host", f"{target.hostname}:{address}"])
+    command.extend([config.image, "scan", "--target", target.url, "--output", "/output"])
+    return command
+
+
+def run_live_scan(target_url: str, output_dir: Path, *, job_id: str | uuid.UUID,
+                  config: ScannerConfig, runner: "DockerRunner | None" = None,
+                  resolver: Resolver | None = None,
+                  readiness: Callable[[], VpnReadiness] | None = None) -> ScanResult:
+    """Run one bounded live scan only after namespace readiness and URL gates."""
+    readiness_gate = readiness or (lambda: require_vpn_ready(
+        interface=config.tunnel_interface, egress_url=config.egress_url,
+        command_prefix=(config.docker_binary, "exec", config.pia_service)))
+    proof = readiness_gate()  # No target DNS/navigation/probe may precede this line.
+    target = validate_url(target_url,
+                          allowed_non_default_ports=config.allowed_non_default_ports,
+                          resolver=resolver or _vpn_namespace_resolver(config))
+    command = build_container_command(config, target, output_dir, job_id=job_id)
+    (runner or DockerRunner()).run(command, timeout_seconds=config.timeout_seconds,
+                                   kill_grace_seconds=config.kill_grace_seconds)
+    artifacts: list[ScanArtifact] = []
+    kinds = {"screenshot.png": ("screenshot_capture", "image/png"),
+             "dom.html": ("dom_snapshot", "text/html"),
+             "network.har": ("har", "application/json"),
+             "redirect-chain.json": ("redirect_chain", "application/json"),
+             "scan-manifest.json": ("enrichment_payload", "application/json")}
+    for filename, (kind, media_type) in kinds.items():
+        path = output_dir / filename
+        if path.is_file() and not path.is_symlink():
+            artifacts.append(ScanArtifact(filename, kind, media_type, path.read_bytes()))
+    if not artifacts:
+        raise ScanExecutionError("scanner worker produced no approved artifacts")
+    return ScanResult(target.url, "pia-sidecar-required", {
+        "network_io": True, "route_mode": RouteMode.PIA_SIDECAR.value,
+        "vpn_ready": True, "tunnel_interface": proof.interface,
+        "egress_address": proof.egress_address, "address_pinned": True,
+        "private_egress_firewall": "sidecar-required",
+    }, tuple(artifacts), output_dir)
 
 
 class DockerRunner:
@@ -546,10 +683,9 @@ class DockerRunner:
         except subprocess.TimeoutExpired:
             return f"docker {action} timed out"
         except OSError as exc:
-            return f"docker {action} could not run: {exc}"
+            return f"docker {action} could not run"
         if completed.returncode != 0:
-            detail = completed.stderr.decode("utf-8", errors="replace")[-1000:]
-            return f"docker {action} exited {completed.returncode}: {detail}"
+            return f"docker {action} exited {completed.returncode}"
         return None
 
     @staticmethod
@@ -598,8 +734,7 @@ class DockerRunner:
         cleanup_failure = self._docker_cleanup(docker, container_name, "rm", "--force")
         self._raise_cleanup_failure([cleanup_failure] if cleanup_failure is not None else [])
         if process.returncode != 0:
-            detail = stderr.decode("utf-8", errors="replace")[-1000:]
-            raise ScanExecutionError(f"scanner worker exited {process.returncode}: {detail}")
+            raise ScanExecutionError(f"scanner worker exited {process.returncode}")
 
 
 _PNG = base64.b64decode(

@@ -25,6 +25,9 @@ from pte.scanner import (
     run_dry_scan,
     run_dry_scan_job,
     runtime_contract,
+    require_vpn_ready,
+    run_live_scan,
+    VpnReadiness,
     validate_url,
     VpnAuthMode,
     VpnRuntimeConfig,
@@ -170,8 +173,15 @@ def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
     local = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
                           worker_uid=os.geteuid(), worker_gid=os.getegid(),
                           vpn=_vpn_config(tmp_path))
-    with pytest.raises(ScanPolicyError, match="address-pinned runtime egress"):
-        build_container_command(local, target, output)
+    command = build_container_command(local, target, output, job_id=uuid.uuid4())
+    assert ["--network", "container:pia-vpn"] == command[
+        command.index("--network"):command.index("--network") + 2]
+    assert "--read-only" in command
+    assert command[command.index("--cap-drop") + 1] == "ALL"
+    assert command[command.index("--security-opt") + 1] == "no-new-privileges"
+    assert command[command.index("--tmpfs") + 1].startswith("/tmp:rw,noexec,nosuid,nodev,")
+    assert not any(option in command for option in ("-p", "--publish", "--privileged"))
+    assert "example.test:8.8.8.8" in command
 
 
 def test_operator_runtime_contract_is_deterministic_non_executing_and_pia_scoped(tmp_path):
@@ -189,11 +199,12 @@ def test_operator_runtime_contract_is_deterministic_non_executing_and_pia_scoped
     assert contract["container_name"] == container_name(job_id)
     assert contract["container_name"] == "pte-scan-00000000000040008000000000000001"
     assert contract["network_mode"] == "service:pia-vpn"
-    assert contract["live_enabled"] is False
+    assert contract["live_enabled"] is True
     assert contract["single_use_output"] is True
     assert contract["cleanup_timeout_seconds"] == 5.0
     assert contract["required_before_live"] == [
-        "pinned-public-address-navigation", "namespace-private-egress-blocking",
+        "tunnel-interface-and-default-route", "public-external-egress-identity",
+        "pinned-public-address-navigation", "sidecar-firewall-private-egress-blocking",
     ]
     assert contract["vpn"] == {
         "configured": True,
@@ -341,7 +352,7 @@ def test_vpn_paths_reject_any_group_or_other_ovpn_permissions(tmp_path, mode):
         })
 
 
-def test_runtime_contract_requires_vpn_but_still_never_enables_live_execution(tmp_path):
+def test_runtime_contract_requires_vpn(tmp_path):
     job_id = uuid.uuid4()
     output = create_job_output_dir(tmp_path.resolve(), job_id)
     config = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
@@ -472,10 +483,81 @@ def test_nonzero_worker_is_removed_before_worker_failure_is_reported():
     runner = DockerRunner(
         lambda *_args, **_kwargs: _ExitedProcess(7, b"worker failed"), cleanup_run
     )
-    with pytest.raises(ScanExecutionError, match="worker exited 7: worker failed"):
+    with pytest.raises(ScanExecutionError, match="worker exited 7$") as raised:
         runner.run(["docker", "run", "--name", "pte-scan-failed", "image"],
                    timeout_seconds=1, kill_grace_seconds=0)
     assert cleanup == [["docker", "rm", "--force", "pte-scan-failed"]]
+    assert "worker failed" not in str(raised.value)
+
+
+def test_vpn_readiness_is_ordered_and_fail_closed_without_direct_fallback():
+    calls = []
+
+    def command(command, timeout):
+        calls.append(tuple(command))
+        return subprocess.CompletedProcess(command, 1, b"", b"credential=value")
+
+    with pytest.raises(ScanPolicyError, match="readiness") as raised:
+        require_vpn_ready(command_adapter=command,
+                          command_prefix=("docker", "exec", "pia-vpn"))
+    assert calls == [("docker", "exec", "pia-vpn", "test", "-d",
+                      "/sys/class/net/tun0")]
+    assert "credential" not in str(raised.value)
+
+
+def test_live_scan_readiness_precedes_target_dns_and_worker(tmp_path):
+    output = create_job_output_dir(tmp_path.resolve(), uuid.uuid4(),
+                                   worker_uid=os.geteuid(), worker_gid=os.getegid())
+    config = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
+                           worker_uid=os.geteuid(), worker_gid=os.getegid(),
+                           vpn=_vpn_config(tmp_path))
+    order = []
+
+    def readiness():
+        order.append("readiness")
+        raise ScanPolicyError("VPN readiness check failed")
+
+    def resolver(*_args, **_kwargs):
+        order.append("dns")
+        return _resolver_for("8.8.8.8")()
+
+    with pytest.raises(ScanPolicyError):
+        run_live_scan("https://example.test/", output, job_id=uuid.uuid4(),
+                      config=config, readiness=readiness, resolver=resolver)
+    assert order == ["readiness"]
+
+
+def test_readiness_accepts_tunnel_route_then_public_egress():
+    calls = []
+
+    def command(command, _timeout):
+        calls.append(command[0])
+        if command[0] == "ip":
+            stdout = b"1.1.1.1 via 10.0.0.1 dev tun0 src 10.0.0.2\n"
+        elif command[0] == "vpn-egress-check":
+            stdout = b"8.8.8.8"
+        else:
+            stdout = b""
+        return subprocess.CompletedProcess(command, 0, stdout, b"")
+
+    proof = require_vpn_ready(command_adapter=command)
+    assert proof == VpnReadiness("tun0", "8.8.8.8")
+    assert calls == ["test", "ip", "vpn-egress-check"]
+
+
+def test_compose_vpn_profile_has_project_sidecar_and_no_socket_or_scanner_port():
+    compose = (Path(__file__).parents[1] / "docker-compose.yml").read_text()
+    assert "context: ./docker/vpn-sidecar" in compose
+    assert "/var/run/docker.sock" not in compose
+    assert "command: ['-f', '']" not in compose
+    assert "scanner-worker:" not in compose
+    entrypoint = (Path(__file__).parents[1] /
+                  "docker/vpn-sidecar/entrypoint.sh").read_text()
+    assert "iptables -P OUTPUT DROP" in entrypoint
+    assert "ip6tables -P OUTPUT DROP" in entrypoint
+    for network in ("10.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16",
+                    "172.16.0.0/12", "192.168.0.0/16"):
+        assert network in entrypoint
 
 
 @pytest.mark.parametrize("cleanup_result", [

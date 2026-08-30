@@ -73,17 +73,12 @@ poetry run pte-worker --tenant-uid 1234 --max-jobs 10
 
 Controls also have environment equivalents: `PTE_WORKER_TENANT_UID`,
 `PTE_WORKER_POLL_INTERVAL`, `PTE_WORKER_MAX_JOBS`, `PTE_WORKER_ONCE`,
-`PTE_WORKER_DRY_SCAN`, and `PTE_WORKER_OUTPUT_ROOT`. `--no-dry-scan` disables
-only the fixed offline proof; it does not enable live scanning. No worker mode
-performs live navigation or network probes, hostile browsing, submits
-credentials, or assumes unavailable external
-reputation results. Console output contains only tenant/job identifiers and
-counts, never raw indicators, email content, artifact paths, or exception text.
-
-A future live path is not enabled here. Disposable live scan containers must
-remain fail-closed unless they have verified `pia-vpn` sidecar readiness, proven
-their egress through that VPN, and use the approved `pia-sidecar` route. This
-project does not claim or synthesize a sidecar health or egress probe.
+`PTE_WORKER_DRY_SCAN`, `PTE_WORKER_MODE`, and `PTE_WORKER_OUTPUT_ROOT`.
+`PTE_WORKER_MODE=offline` is the default and never passes the submitted URL to
+the scanner; its artifacts say `network_io=false` and are not live evidence.
+Live jobs require the exact `vpn-live` mode (or `--mode vpn-live`),
+`PTE_WORKER_DRY_SCAN=false`, and `PTE_SCANNER_ROUTE_MODE=pia-sidecar`. There is
+no direct-live mode or fallback route. Console errors are deliberately generic.
 
 Failures become terminal `blocked` or `failed` states with conservative reason
 codes in tenant-scoped audit events. Polling never retries them automatically.
@@ -153,11 +148,14 @@ contract. Workers use a fresh disposable profile. Downloads are blocked by
 default; the only alternative is quarantine metadata/hash-only, with download
 bytes never retained or submitted.
 
-Live execution is fail-closed and command construction is currently disabled.
-Preflight DNS validation alone cannot prevent rebinding when the browser later
-resolves an attacker-controlled hostname inside an unrestricted shared network
-namespace. Live commands will remain disabled until the runtime contract pins
-validated public addresses and independently blocks private egress.
+Live execution is fail-closed. Before target DNS, target probing, or navigation,
+the worker proves `tun0` exists, the default route uses it, and an external
+identity endpoint returns a public egress address from the VPN namespace.
+Failure stops the job with no direct fallback. Scanner preflight owns URL/port
+validation, rejection of private/LAN/loopback/link-local/metadata addresses,
+and address pinning. The `pia-vpn` kill-switch/firewall independently owns
+blocking private and non-tunnel egress for redirects and subresources; address
+pinning is not a firewall.
 
 Operators can prepare and inspect the non-secret future runtime contract for a
 job UUID without starting a container:
@@ -168,33 +166,86 @@ PTE_SCANNER_WORKER_UID="$(id -u)" PTE_SCANNER_WORKER_GID="$(id -g)" \
   OUTPUT_ROOT=./tmp/scanner-jobs
 ```
 
-Before preparing the contract, Reknown should store the provider-issued OVPN
-file and either an OpenVPN auth file or inline credentials locally, outside
-version control. Use restrictive permissions and absolute canonical paths:
+For Compose, place the operator-provided files at these exact ignored paths.
+The Compose sidecar always passes `/vpn/operator.auth` to OpenVPN explicitly;
+the OVPN file does not need to embed a credential path:
 
 ```bash
 mkdir -p ./secrets
 chmod 700 ./secrets
+install -m 600 /operator/source/region.ovpn ./secrets/operator.ovpn
+install -m 600 /operator/source/pia.auth ./secrets/operator.auth
 chmod 600 ./secrets/operator.ovpn ./secrets/operator.auth
 export PTE_VPN_OVPN_PATH="$(pwd)/secrets/operator.ovpn"
 export PTE_VPN_AUTH_FILE="$(pwd)/secrets/operator.auth"
+export PTE_SCANNER_IMAGE=pte-scanner:operator-build
+export PTE_WORKER_TENANT_UID=cust_EXAMPLE
 ```
 
-As an alternative to `PTE_VPN_AUTH_FILE`, set both `PTE_VPN_USERNAME` and
+For a host-controlled runtime contract, as an alternative to
+`PTE_VPN_AUTH_FILE`, set both `PTE_VPN_USERNAME` and
 `PTE_VPN_PASSWORD` in the process environment. Never set both authentication
-modes, and never put real values in `.env.example`, source, logs, tickets, or
-shell command arguments. The OVPN and auth files must not be accessible by
+modes. The Compose sidecar intentionally supports the mounted auth file only.
+Never put real values in `.env.example`, source, logs, tickets, or shell command
+arguments. The OVPN and auth files must not be accessible by
 group or other users; configuration paths must be absolute, canonical regular
 files and must not be symlinks. Project ignore rules cover `.env`, `secrets/`,
 OVPN/auth files, and runtime output, but operators remain responsible for local
 file permissions and secret handling.
 
-The command creates one new mode-`0700` directory for that job and prints a
+Validate without starting or restarting infrastructure:
+
+```bash
+make vpn-live-config
+make test-vpn-runtime
+poetry run python -m compileall -q pte tests
+```
+
+The VPN service is opt-in under the `vpn-live` Compose profile. It is built from
+`docker/vpn-sidecar`: an exact Alpine release and exact OpenVPN/network package
+versions, with a project-owned entrypoint whose OUTPUT/FORWARD policies are
+DROP before OpenVPN starts. Before the tunnel is up, only Docker DNS and the
+resolved VPN server endpoints are allowed. After `tun0` is up, non-tunnel
+egress and IPv6 are denied, and IPv4 private/RFC1918, loopback, link-local,
+CGNAT, multicast, reserved/documentation, and metadata destinations are
+rejected before the general `tun0` allow. Those namespace rules cover initial
+navigation, redirects, and browser subresources.
+
+The live queue worker is deliberately run on the Docker host, not in Compose:
+it needs the Docker CLI to create and clean up one scanner container per job.
+Do not mount `/var/run/docker.sock` into any worker or scanner container. The
+per-job container has `--network container:pia-vpn` (the Docker CLI equivalent
+of `network_mode: service:pia-vpn`), no published port, read-only root, a
+bounded tmpfs, all capabilities dropped, `no-new-privileges`, and the declared
+non-root UID/GID. Start the sidecar, then start the host worker with explicit
+live settings:
+
+```bash
+docker compose --profile vpn-live up -d --build --wait pia-vpn
+PTE_WORKER_MODE=vpn-live PTE_WORKER_DRY_SCAN=false \
+PTE_SCANNER_ROUTE_MODE=pia-sidecar poetry run pte-worker \
+  --tenant-uid "$PTE_WORKER_TENANT_UID"
+```
+
+This repository defines but does not pretend to provide the browser scanner
+image. The operator build must produce the exact tag in `PTE_SCANNER_IMAGE`,
+run as UID/GID `65532:65532`, and implement the bounded command
+`scan --target URL --output /output`, writing only the approved artifact names
+documented above. Because Docker's embedded resolver is not allowed through the
+kill switch, that image must configure its browser to use DNS-over-HTTPS or an
+explicit public resolver through the tunnel for redirect/subresource names; it
+must apply the same public-address policy to those resolutions. Live mode fails
+if that image/command is absent.
+Real VPN verification is skipped when credentials/files are
+absent. Unit tests use injected subprocess adapters and make no VPN call.
+Starting the profile is a separate operator deployment action.
+
+The prepare command creates one new mode-`0700` directory for that job and prints a
 JSON contract. Reusing the job ID fails because output directories are
 single-use. Container names are deterministic (`pte-scan-` plus the UUID hex),
 so timeout cleanup always targets the exact per-job container. The contract
-contains `network_mode: service:pia-vpn`, bounded stop/kill settings, and the
-two missing live gates; it never runs Docker. Its VPN section contains only the
+contains `network_mode: service:pia-vpn` and bounded stop/kill settings; it
+never runs Docker. Its VPN section contains only the
 authentication mode and OVPN path, never the auth-file path, username, or
 password. No credentials are placed in command-line arguments.
 
@@ -269,25 +320,24 @@ indicators are extracted without JavaScript execution or credential submission.
 used by `tests/test_enrichment.py` to prove the JSON contract, source-status
 coverage, risk evidence, limitations, and tenant-scoped Postgres persistence.
 
-The future design retains `ScannerConfig(route_mode=PIA_SIDECAR)` and the VPN
+The live design uses `ScannerConfig(route_mode=PIA_SIDECAR)` and the VPN
 container namespace. Its per-job output directory must be mode `0700` and owned
 by the configured worker UID/GID, defaulting to the container identity
 `65532:65532`; invalid identity values fail validation. The eventual Docker
-command must also use a unique explicit container name. Timeout cleanup acts on
+command also uses a unique explicit container name. Timeout cleanup acts on
 that name with `docker stop`, escalates to `docker kill`, and always issues
-`docker rm --force`, rather than merely terminating the Docker CLI process. In
-Compose, the intended PIA namespace equivalent remains:
+`docker rm --force`, rather than merely terminating the Docker CLI process. Its
+network setting is equivalent to this Compose relationship:
 
 ```yaml
-services:
-  scanner-worker:
-    network_mode: service:pia-vpn
+network_mode: service:pia-vpn
 ```
 
-`pia-vpn` is an external future sidecar/service name, not a bundled VPN setup.
+`pia-vpn` is the opt-in, project-built Compose OpenVPN sidecar; the scanner is
+created per job by the host worker and never receives the Docker socket.
 No PIA usernames, passwords, keys, or credential placeholders are stored here.
 URL policy resolves every DNS answer during validation and rejects
 loopback, private/LAN, link-local, multicast, reserved, unspecified, CGNAT,
 and cloud-metadata addresses. Only HTTP(S) and default ports 80/443 are allowed
-unless a non-default port is explicitly configured. No validated hostname is
-currently passed to a live container.
+unless a non-default port is explicitly configured. Approved DNS answers are
+pinned in the disposable live container command.

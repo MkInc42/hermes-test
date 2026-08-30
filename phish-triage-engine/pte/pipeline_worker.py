@@ -18,7 +18,8 @@ from .artifacts import ArtifactStore, ArtifactStorageError
 from .db import DbConfig
 from .enrichment import build_enrichment_contract, persist_enrichment_job, utc_observed_at
 from .reports import defang_indicator
-from .scanner import ScanResult, create_job_output_dir, run_dry_scan
+from .scanner import (RouteMode, ScanResult, ScannerConfig, create_job_output_dir,
+                      run_dry_scan, run_live_scan)
 from .services import (
     PersistenceError, ValidationError, add_indicators, claim_queued_job,
     get_job_bundle, persist_report_bundle, persist_scan_completion,
@@ -28,6 +29,7 @@ from .services import (
 WORKER_ACTOR = "pipeline-worker"
 DRY_SCAN_PROOF_URL = "https://example.invalid/benign"
 DRY_SCAN_ROUTE_LABEL = "direct-dev"
+WORKER_MODES = frozenset({"offline", "vpn-live"})
 
 
 def _non_negative_finite_float(value: str) -> float:
@@ -57,6 +59,7 @@ class WorkerConfig:
     max_jobs: int = 0
     once: bool = False
     dry_scan: bool = True
+    mode: str = "offline"
     output_root: Path = Path("./tmp/pipeline-jobs")
 
     def __post_init__(self) -> None:
@@ -64,6 +67,10 @@ class WorkerConfig:
             raise ValueError("poll interval must be a finite non-negative number")
         if self.max_jobs < 0:
             raise ValueError("max jobs must be non-negative")
+        if self.mode not in WORKER_MODES:
+            raise ValueError("worker mode must be offline or vpn-live")
+        if self.mode == "vpn-live" and self.dry_scan:
+            raise ValueError("vpn-live mode cannot use the offline dry scan")
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] = os.environ) -> "WorkerConfig":
@@ -73,6 +80,7 @@ class WorkerConfig:
             max_jobs=int(environ.get("PTE_WORKER_MAX_JOBS", "0")),
             once=environ.get("PTE_WORKER_ONCE", "").lower() in {"1", "true", "yes"},
             dry_scan=environ.get("PTE_WORKER_DRY_SCAN", "true").lower() in {"1", "true", "yes"},
+            mode=environ.get("PTE_WORKER_MODE", "offline"),
             output_root=Path(environ.get("PTE_WORKER_OUTPUT_ROOT", "./tmp/pipeline-jobs")),
         )
 
@@ -116,7 +124,7 @@ def process_claimed_job(cfg: DbConfig, *, job: dict[str, Any], config: WorkerCon
     target_url = _target_url(bundle)
 
     scan_result = None
-    if config.dry_scan:
+    if config.mode == "offline" and config.dry_scan:
         output = create_job_output_dir(config.output_root.resolve(), job_id)
         set_job_state(cfg, tenant_uid, job_id, "policy_checked", actor=WORKER_ACTOR)
         set_job_state(cfg, tenant_uid, job_id, "scanning", actor=WORKER_ACTOR)
@@ -124,6 +132,25 @@ def process_claimed_job(cfg: DbConfig, *, job: dict[str, Any], config: WorkerCon
         # The safe queue worker has no live scan/navigation/network-probe path.
         scan = run_dry_scan(DRY_SCAN_PROOF_URL, output)
         _verify_offline_dry_scan(scan)
+        scan_result = persist_scan_completion(
+            cfg, tenant_uid=tenant_uid, job_id=job_id,
+            submission_id=job["submission_id"], route_label=scan.route_label,
+            policy=scan.policy,
+            artifacts=[{"derived_kind": item.derived_kind, "media_type": item.media_type,
+                        "data": item.data} for item in scan.artifacts],
+            storage_writer=store.put, actor=WORKER_ACTOR, completion_state="analyzing",
+        )
+    elif config.mode == "vpn-live":
+        scanner_config = ScannerConfig.from_env()
+        if scanner_config.route_mode is not RouteMode.PIA_SIDECAR:
+            raise ValidationError("vpn-live jobs require route_mode=pia-sidecar")
+        output = create_job_output_dir(
+            config.output_root.resolve(), job_id, worker_uid=scanner_config.worker_uid,
+            worker_gid=scanner_config.worker_gid,
+        )
+        set_job_state(cfg, tenant_uid, job_id, "policy_checked", actor=WORKER_ACTOR)
+        set_job_state(cfg, tenant_uid, job_id, "scanning", actor=WORKER_ACTOR)
+        scan = run_live_scan(target_url, output, job_id=job_id, config=scanner_config)
         scan_result = persist_scan_completion(
             cfg, tenant_uid=tenant_uid, job_id=job_id,
             submission_id=job["submission_id"], route_label=scan.route_label,
@@ -203,6 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-jobs", type=_non_negative_int, default=defaults.max_jobs)
     parser.add_argument("--once", action="store_true", default=defaults.once)
     parser.add_argument("--no-dry-scan", action="store_true", help="skip the fixed offline scan proof")
+    parser.add_argument("--mode", choices=sorted(WORKER_MODES), default=defaults.mode)
     parser.add_argument("--output-root", type=Path, default=defaults.output_root)
     parser.add_argument("--retry-job-id", help="requeue one failed/blocked job and exit")
     args = parser.parse_args(argv)
@@ -215,7 +243,8 @@ def main(argv: list[str] | None = None) -> int:
         count = run_worker(cfg, config=WorkerConfig(
             tenant_uid=args.tenant_uid, poll_interval=args.poll_interval,
             max_jobs=args.max_jobs, once=args.once,
-            dry_scan=defaults.dry_scan and not args.no_dry_scan,
+            dry_scan=(defaults.dry_scan and not args.no_dry_scan
+                      and args.mode == "offline"), mode=args.mode,
             output_root=args.output_root,
         ))
     except (psycopg.Error, PersistenceError, ValueError, OSError):

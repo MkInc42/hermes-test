@@ -19,5 +19,27 @@ services:
       timeout: 3s
       retries: 20
 
+  pia-vpn:
+    build:
+      context: ./docker/vpn-sidecar
+    container_name: pia-vpn
+    profiles: ["vpn-live"]
+    cap_add: ["NET_ADMIN"]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      - /run:size=1m,mode=0755
+      - /tmp:size=1m,mode=1777
+    restart: "no"
+    volumes:
+      - ${PTE_VPN_OVPN_PATH:?set absolute OVPN path}:/vpn/operator.ovpn:ro
+      - ${PTE_VPN_AUTH_FILE:?set absolute auth path}:/vpn/operator.auth:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/sbin/vpn-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
 volumes:
   pte_pgdata:

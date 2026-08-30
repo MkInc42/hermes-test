@@ -1,4 +1,4 @@
-.PHONY: dev-up migrate test run-api enrich-fixture scan-proof scanner-prepare worker-once worker
+.PHONY: dev-up migrate test test-vpn-runtime run-api enrich-fixture scan-proof scanner-prepare worker-once worker vpn-live-config
 
 dev-up:
 	docker compose up -d --wait db
@@ -9,6 +9,12 @@ migrate:
 
 test:
 	poetry run pytest
+
+test-vpn-runtime:
+	poetry run pytest tests/test_scanner.py tests/test_pipeline_worker.py
+
+vpn-live-config:
+	docker compose --profile vpn-live config --quiet
 
 run-api:
 	poetry run uvicorn pte.api:app --host 127.0.0.1 --port 8000

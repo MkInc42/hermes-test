@@ -167,6 +167,24 @@ def test_worker_config_rejects_negative_max_jobs():
         WorkerConfig(tenant_uid="cust_TEST", max_jobs=-1)
 
 
+def test_worker_modes_are_explicit_and_live_cannot_claim_offline_proof():
+    assert WorkerConfig(tenant_uid="cust_TEST").mode == "offline"
+    live = WorkerConfig(tenant_uid="cust_TEST", mode="vpn-live", dry_scan=False)
+    assert live.mode == "vpn-live" and live.dry_scan is False
+    with pytest.raises(ValueError, match="cannot use the offline"):
+        WorkerConfig(tenant_uid="cust_TEST", mode="vpn-live", dry_scan=True)
+    with pytest.raises(ValueError, match="worker mode"):
+        WorkerConfig(tenant_uid="cust_TEST", mode="direct-live", dry_scan=False)
+
+
+def test_worker_env_requires_explicit_vpn_live_mode():
+    config = WorkerConfig.from_env({
+        "PTE_WORKER_TENANT_UID": "cust_TEST", "PTE_WORKER_MODE": "vpn-live",
+        "PTE_WORKER_DRY_SCAN": "false",
+    })
+    assert config.mode == "vpn-live" and config.dry_scan is False
+
+
 @pytest.mark.parametrize("name,value", [
     ("PTE_WORKER_POLL_INTERVAL", "soon"),
     ("PTE_WORKER_MAX_JOBS", "many"),

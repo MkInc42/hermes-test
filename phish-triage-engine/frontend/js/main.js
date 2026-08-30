@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var DEFAULT_API = "http://127.0.0.1:8000";
+  var DEFAULT_API = window.PteApiBase.defaultApiBase(window.location);
   var EMAIL_LIMIT = 10 * 1024 * 1024;
   var SCREENSHOT_LIMIT = 15 * 1024 * 1024;
   var apiInput = document.getElementById("api-base");
@@ -22,7 +22,9 @@
     "ocr-form": "Submit OCR text",
     "screenshot-form": "Submit screenshot"
   };
-  var normalizedApiBase = window.PteApiBase.normalizedApiBase;
+  function normalizedApiBase(value) {
+    return window.PteApiBase.normalizedApiBase(value, window.location);
+  }
 
   function currentApiBase() {
     try { return normalizedApiBase(apiInput.value.trim()); }
@@ -34,6 +36,7 @@
   }
 
   try {
+    apiInput.value = DEFAULT_API;
     var storedApi = window.localStorage.getItem("pte-api-base");
     if (storedApi) apiInput.value = normalizedApiBase(storedApi);
   } catch (_error) {

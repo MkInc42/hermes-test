@@ -1,6 +1,6 @@
 # Phish Triage frontend: local operator guide
 
-This is a dependency-free static UI for the local Phish Triage Intake API. Run it only on a trusted workstation and keep both services bound to loopback. This is an internal evidence-intake tool, not a public deployment: do not bind either service to `0.0.0.0`, expose the ports, or place it on a public host.
+This is a dependency-free static UI for the Phish Triage Intake API. The loopback setup is preferred. The documented LAN setup is for the trusted private network at `192.168.1.115` only; LAN binding is trusted-network-only and must not be exposed to an untrusted network or the public internet.
 
 ## Prepare Postgres
 
@@ -31,7 +31,16 @@ python3 -m http.server 8080 --bind 127.0.0.1 --directory frontend
 poetry run python -m http.server 8080 --bind 127.0.0.1 --directory frontend
 ```
 
-This split-origin setup uses frontend port `8080` and API port `8000`. The API permits the static frontend origins `http://127.0.0.1:8080`, `http://localhost:8080`, and `http://[::1]:8080`; keep whichever host spelling you choose on port `8080`. Open the UI at <http://127.0.0.1:8080>. Confirm API/database readiness at <http://127.0.0.1:8000/health>; a ready service returns `{"status":"ok"}`. In the UI's **API connection** section, set **API base URL** to `http://127.0.0.1:8000` and select **Use address**. The value is stored in browser local storage. Only loopback HTTP(S) origins are accepted; credentials, paths, query strings, and fragments are rejected.
+This split-origin setup uses frontend port `8080` and API port `8000`. The API permits the static frontend origins `http://127.0.0.1:8080`, `http://localhost:8080`, and `http://[::1]:8080`; keep whichever host spelling you choose on port `8080`. Open the UI at <http://127.0.0.1:8080>. Confirm API/database readiness at <http://127.0.0.1:8000/health>; a ready service returns `{"status":"ok"}`. In the UI's **API connection** section, set **API base URL** to `http://127.0.0.1:8000` and select **Use address**. The value is stored in browser local storage.
+
+For access from the documented trusted LAN, bind the services to the host's LAN address instead:
+
+```sh
+poetry run uvicorn pte.api:app --host 192.168.1.115 --port 8012
+python3 -m http.server 8088 --bind 192.168.1.115 --directory frontend
+```
+
+Open the trusted-LAN frontend at <http://192.168.1.115:8088> and check the API at <http://192.168.1.115:8012/health>. A non-loopback HTTP(S) page automatically selects the same page hostname on API port `8012`; loopback pages continue to select port `8000`. A manually entered or browser-saved API origin is accepted only when it is HTTP(S) and uses loopback or exactly the current page hostname. Credentials, paths, query strings, and fragments are rejected. The API CORS allowlist contains the single documented LAN frontend origin `http://192.168.1.115:8088`; other LAN hosts or ports are not trusted.
 
 To smoke-check the browser preflight directly, run:
 

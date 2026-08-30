@@ -17,6 +17,7 @@ FRONTEND_ORIGINS = (
     "http://127.0.0.1:8080",
     "http://localhost:8080",
     "http://[::1]:8080",
+    "http://192.168.1.115:8088",
 )
 
 
@@ -45,7 +46,8 @@ def test_intake_preflight_allows_documented_frontend_origins(client, origin):
     assert "content-type" in response.headers["access-control-allow-headers"].lower()
 
 
-@pytest.mark.parametrize("origin", ["http://127.0.0.1:8081", "https://example.test"])
+@pytest.mark.parametrize("origin", ["http://127.0.0.1:8081", "http://192.168.1.115:8080",
+                                    "http://192.168.1.116:8088", "https://example.test"])
 def test_intake_preflight_rejects_undocumented_origins(client, origin):
     response = client.options(
         "/v1/intake/url",

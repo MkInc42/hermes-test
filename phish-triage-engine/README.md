@@ -230,7 +230,8 @@ PTE_SCANNER_ROUTE_MODE=pia-sidecar poetry run pte-worker \
 This repository defines but does not pretend to provide the browser scanner
 image. The operator build must produce the exact tag in `PTE_SCANNER_IMAGE`,
 run as UID/GID `65532:65532`, and implement the bounded command
-`scan --target URL --output /output`, writing only the approved artifact names
+`scan --target-file /run/pte/target-url --output /output`, reading the URL from
+that mode-`0600`, scanner-owned, read-only bind mount and writing only the approved artifact names
 documented above. Because Docker's embedded resolver is not allowed through the
 kill switch, that image must configure its browser to use DNS-over-HTTPS or an
 explicit public resolver through the tunnel for redirect/subresource names; it

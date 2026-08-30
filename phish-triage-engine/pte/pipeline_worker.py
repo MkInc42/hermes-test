@@ -69,6 +69,8 @@ class WorkerConfig:
             raise ValueError("max jobs must be non-negative")
         if self.mode not in WORKER_MODES:
             raise ValueError("worker mode must be offline or vpn-live")
+        if self.mode == "offline" and not self.dry_scan:
+            raise ValueError("offline mode requires the fixed dry scan proof")
         if self.mode == "vpn-live" and self.dry_scan:
             raise ValueError("vpn-live mode cannot use the offline dry scan")
 

@@ -175,6 +175,8 @@ def test_worker_modes_are_explicit_and_live_cannot_claim_offline_proof():
         WorkerConfig(tenant_uid="cust_TEST", mode="vpn-live", dry_scan=True)
     with pytest.raises(ValueError, match="worker mode"):
         WorkerConfig(tenant_uid="cust_TEST", mode="direct-live", dry_scan=False)
+    with pytest.raises(ValueError, match="offline mode requires"):
+        WorkerConfig(tenant_uid="cust_TEST", mode="offline", dry_scan=False)
 
 
 def test_worker_env_requires_explicit_vpn_live_mode():

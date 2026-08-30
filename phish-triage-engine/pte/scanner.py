@@ -577,7 +577,8 @@ def handle_download(content: bytes | None = None, *,
 
 
 def build_container_command(config: ScannerConfig, target: ValidatedTarget,
-                            output_dir: Path, *, job_id: str | uuid.UUID | None = None
+                            output_dir: Path, target_file: Path, *,
+                            job_id: str | uuid.UUID | None = None
                             ) -> list[str]:
     """Build a disposable, address-pinned worker in the PIA namespace."""
     if config.route_mode is not RouteMode.PIA_SIDECAR:
@@ -596,6 +597,18 @@ def build_container_command(config: ScannerConfig, target: ValidatedTarget,
     if ((metadata.st_uid, metadata.st_gid) != (config.worker_uid, config.worker_gid)
             or metadata.st_mode & 0o777 != 0o700):
         raise ScanPolicyError("job output must be mode 0700 and owned by the worker UID/GID")
+    try:
+        resolved_target_file = target_file.resolve(strict=True)
+        target_metadata = resolved_target_file.stat()
+    except OSError as exc:
+        raise ScanPolicyError("target file could not be resolved safely") from exc
+    if (target_file != resolved_target_file or not resolved_target_file.is_file()
+            or resolved_target_file.is_symlink()):
+        raise ScanPolicyError("target file must be a canonical regular file")
+    if ((target_metadata.st_uid, target_metadata.st_gid)
+            != (config.worker_uid, config.worker_gid)
+            or target_metadata.st_mode & 0o777 != 0o600):
+        raise ScanPolicyError("target file must be mode 0600 and owned by the worker UID/GID")
     name = container_name(job_id or output_dir.name)
     command = [
         config.docker_binary, "run", "--name", name, "--rm=false",
@@ -604,14 +617,44 @@ def build_container_command(config: ScannerConfig, target: ValidatedTarget,
         "--user", f"{config.worker_uid}:{config.worker_gid}",
         "--tmpfs", "/tmp:rw,noexec,nosuid,nodev,size=64m",
         "--mount", f"type=bind,src={output_dir},dst=/output",
+        "--mount", (f"type=bind,src={resolved_target_file},"
+                    "dst=/run/pte/target-url,readonly"),
     ]
     # Docker's hosts entry pins every preflight-approved answer. The sidecar
     # firewall remains the independent control for redirects and all other
     # private/LAN/link-local/metadata destinations.
     for address in target.resolved_addresses:
         command.extend(["--add-host", f"{target.hostname}:{address}"])
-    command.extend([config.image, "scan", "--target", target.url, "--output", "/output"])
+    command.extend([config.image, "scan", "--target-file", "/run/pte/target-url",
+                    "--output", "/output"])
     return command
+
+
+def _create_target_file(target_url: str, output_dir: Path, *,
+                        job_id: str | uuid.UUID, worker_uid: int,
+                        worker_gid: int) -> Path:
+    """Create a single-use URL handoff without placing it in process arguments."""
+    path = output_dir.parent / f".pte-target-{uuid.UUID(str(job_id)).hex}"
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.fchown(descriptor, worker_uid, worker_gid)
+        os.fchmod(descriptor, 0o600)
+        os.write(descriptor, target_url.encode("utf-8"))
+        os.fsync(descriptor)
+    except (OSError, ValueError) as exc:
+        if descriptor is not None:
+            os.close(descriptor)
+            descriptor = None
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise ScanPolicyError("secure target file could not be created") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    return path.resolve(strict=True)
 
 
 def run_live_scan(target_url: str, output_dir: Path, *, job_id: str | uuid.UUID,
@@ -626,9 +669,17 @@ def run_live_scan(target_url: str, output_dir: Path, *, job_id: str | uuid.UUID,
     target = validate_url(target_url,
                           allowed_non_default_ports=config.allowed_non_default_ports,
                           resolver=resolver or _vpn_namespace_resolver(config))
-    command = build_container_command(config, target, output_dir, job_id=job_id)
-    (runner or DockerRunner()).run(command, timeout_seconds=config.timeout_seconds,
-                                   kill_grace_seconds=config.kill_grace_seconds)
+    target_file = _create_target_file(
+        target.url, output_dir, job_id=job_id,
+        worker_uid=config.worker_uid, worker_gid=config.worker_gid,
+    )
+    try:
+        command = build_container_command(
+            config, target, output_dir, target_file, job_id=job_id)
+        (runner or DockerRunner()).run(command, timeout_seconds=config.timeout_seconds,
+                                       kill_grace_seconds=config.kill_grace_seconds)
+    finally:
+        target_file.unlink(missing_ok=True)
     artifacts: list[ScanArtifact] = []
     kinds = {"screenshot.png": ("screenshot_capture", "image/png"),
              "dom.html": ("dom_snapshot", "text/html"),

@@ -167,13 +167,17 @@ def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
     output = create_job_output_dir(tmp_path.resolve(), uuid.uuid4())
     target = validate_url("https://example.test/", resolver=_resolver_for("8.8.8.8"))
     with pytest.raises(ScanPolicyError, match="pia-sidecar"):
-        build_container_command(ScannerConfig(), target, output)
+        build_container_command(ScannerConfig(), target, output, output / "target")
     # A public preflight answer cannot authorize passing an attacker-controlled
     # hostname to a namespace where its next answer could be 127.0.0.1/private.
     local = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
                           worker_uid=os.geteuid(), worker_gid=os.getegid(),
                           vpn=_vpn_config(tmp_path))
-    command = build_container_command(local, target, output, job_id=uuid.uuid4())
+    target_file = tmp_path / "target-url"
+    target_file.write_text("https://example.test/")
+    target_file.chmod(0o600)
+    command = build_container_command(local, target, output, target_file,
+                                      job_id=uuid.uuid4())
     assert ["--network", "container:pia-vpn"] == command[
         command.index("--network"):command.index("--network") + 2]
     assert "--read-only" in command
@@ -182,6 +186,56 @@ def test_live_route_and_rebinding_boundary_fail_closed(tmp_path):
     assert command[command.index("--tmpfs") + 1].startswith("/tmp:rw,noexec,nosuid,nodev,")
     assert not any(option in command for option in ("-p", "--publish", "--privileged"))
     assert "example.test:8.8.8.8" in command
+
+
+def test_live_scan_hands_query_token_through_read_only_target_file(tmp_path):
+    job_id = uuid.uuid4()
+    output = create_job_output_dir(tmp_path.resolve(), job_id,
+                                   worker_uid=os.geteuid(), worker_gid=os.getegid())
+    config = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
+                           worker_uid=os.geteuid(), worker_gid=os.getegid(),
+                           vpn=_vpn_config(tmp_path))
+    target_url = "https://example.test/path?token=synthetic-regression-token"
+    commands = []
+
+    class Runner:
+        def run(self, command, **_kwargs):
+            commands.append(list(command))
+            (output / "scan-manifest.json").write_bytes(b"{}")
+
+    run_live_scan(target_url, output, job_id=job_id, config=config, runner=Runner(),
+                  readiness=lambda: VpnReadiness("tun0", "8.8.8.8"),
+                  resolver=_resolver_for("8.8.8.8"))
+    command = commands[0]
+    rendered = " ".join(command)
+    assert target_url not in rendered
+    assert "synthetic-regression-token" not in rendered
+    assert "--target" not in command
+    assert command[command.index("--target-file") + 1] == "/run/pte/target-url"
+    mounts = [command[index + 1] for index, value in enumerate(command) if value == "--mount"]
+    target_mount = next(mount for mount in mounts if "dst=/run/pte/target-url" in mount)
+    assert target_mount.endswith(",readonly")
+    assert not (tmp_path / f".pte-target-{job_id.hex}").exists()
+
+
+def test_live_scan_removes_target_file_when_worker_fails(tmp_path):
+    job_id = uuid.uuid4()
+    output = create_job_output_dir(tmp_path.resolve(), job_id,
+                                   worker_uid=os.geteuid(), worker_gid=os.getegid())
+    config = ScannerConfig(route_mode=RouteMode.PIA_SIDECAR,
+                           worker_uid=os.geteuid(), worker_gid=os.getegid(),
+                           vpn=_vpn_config(tmp_path))
+
+    class FailingRunner:
+        def run(self, _command, **_kwargs):
+            raise ScanExecutionError("synthetic worker failure")
+
+    with pytest.raises(ScanExecutionError, match="synthetic worker failure"):
+        run_live_scan("https://example.test/path?token=synthetic", output,
+                      job_id=job_id, config=config, runner=FailingRunner(),
+                      readiness=lambda: VpnReadiness("tun0", "8.8.8.8"),
+                      resolver=_resolver_for("8.8.8.8"))
+    assert not (tmp_path / f".pte-target-{job_id.hex}").exists()
 
 
 def test_operator_runtime_contract_is_deterministic_non_executing_and_pia_scoped(tmp_path):

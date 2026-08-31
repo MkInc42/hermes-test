@@ -414,3 +414,67 @@ Verification:
 - Screenshots saved: tony-stucco-v13-desktop.png, tony-stucco-v13-mobile.png
 - `tony-stucco-v13-desktop.png`, `tony-stucco-v13-mobile.png` -- v13 screenshots
 - `tony-stucco-client-share-mockups-v13.html` — carousel wrap fix v13 (~40KB). Fixed hero carousel so next-click from last slide wraps to first and prev-click from first wraps to last. Root cause: Swiper 11 loop=true on jsdelivr CDN has a direction-based logic bug that prevents DOM-reorder loop from creating functional wrap. Fix: disabled loop=true, replaced Swiper nav config with custom click handlers that check index before slideTo. All v12 image optimization, SEO, and contrast fixes preserved.
+
+### v14 (Client-Ready Preview)
+`tony-stucco-client-share-mockups-v14.html` — resolved remaining SEO issues and dead/placeholder links, finalized phone number format. All v13 layout, carousel wrap, optimized images, and contrast fixes preserved.
+
+--
+### v15 (Carousel Direction Fix)
+`tony-stucco-client-share-mockups-v15.html` — rotated hero carousel start slide to open with the strongest project photo first. Removed waterproofing/concrete services from copy and service list. All v14 SEO/image/layout preserved.
+
+--
+### v16 (Client-Ready Cleanup)
+
+`tony-stucco-client-share-mockups-v16.html` — client-ready cleanup revision addressing TRIP + Corey review findings. Key changes from v15:
+
+**CTA wiring (5 primary buttons fixed):**
+- Header "ESTIMATE" → `#contact`
+- Hero "REQUEST AN ESTIMATE" → `#contact`
+- "TALK TO TONY ABOUT YOUR PROJECT" → `#contact`
+- "SEE MORE PROJECTS" → `#projects`
+- Bottom "REQUEST AN ESTIMATE" → `#contact`
+
+**Phone link fix (2 instances):**
+- Header and footer `tel:+1239****8845` → `tel:+12393508845` (valid E.164 for (239) 350-8845)
+
+**Mobile horizontal overflow fix:**
+- Added `flex-wrap: wrap` and reduced gap on `.header-actions` at `≤500px`
+- Shortened header CTA on mobile: "ESTIMATE" replaces "GET AN ESTIMATE" via CSS label swap
+- Verified: scrollWidth=390 == innerWidth=390 at 390px viewport; scrollWidth=375 == innerWidth=375 at 375px
+
+**Stale first-body paragraph rewritten:**
+- Replaced "property manager / general contractor" audience language with homeowner-residential-first copy
+- "Stucco repair and exterior painting for Florida homes. If your stucco has cracks, your paint is peeling, or the exterior just needs a fresh coat, we handle the job from patch to finish. Free estimates."
+- "Free estimates" now visibly surfaced in the first-body section
+
+**Placeholder hrefs cleaned:**
+- Logo link: `href="#"` → `href="#top"` (added `id="top"` to service banner)
+- Footer service links (3): `href="#"` → `href="#services"`
+- Footer company links (4): `href="#"` → `href="#about"`, `#projects`, `#contact`, `#service-area`
+- Footer contact link: `href="#"` → `href="#service-area"`
+- Added `id="service-area"` to coverage map section
+
+**Em dash cleanup:**
+- Footer logo alt: "LLC — stucco" → "LLC, stucco" (em dash replaced with comma)
+
+**Preserved:**
+- v15 visual direction and branding
+- Real project photos, service area map
+- Swiper carousel wrap behavior (all 5 slides cycle, wraps to 0)
+- Optimized image assets (WebP srcset + JPEG fallback)
+- SEO/title/meta/schema direction
+- No em dashes in visible user-facing copy (confirmed false)
+- No promotion of waterproofing, concrete repair, drywall, or fences
+
+**Verification:**
+- Desktop 1440x900: all sections render, no console errors
+- Mobile 390x844: single-column clean, no overflow, no console errors
+- Mobile 375x667: scrollWidth=375, no overflow
+- Carousel: 5 slides cycle and wrap (0→1→2→3→4→0→1 confirmed)
+- Map image loads at 1408x768 (nonzero dimensions)
+- 0 `href="#"` links remaining (confirmed via DOM query)
+- Both phone links use `tel:+12393508845`
+- "Free estimates" present in visible copy
+- "property manager" and "general contractor" absent from visible copy
+- 0 em dashes in visible user-facing body copy
+- Screenshots saved: `tony-stucco-v16-desktop-full.png`, `tony-stucco-v16-mobile-full.png`

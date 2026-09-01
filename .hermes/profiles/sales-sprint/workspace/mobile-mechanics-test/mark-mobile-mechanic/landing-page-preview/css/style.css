@@ -388,7 +388,34 @@ p, h1, h2, h3 { text-align: left; }
   border: 1px solid rgba(255,255,255,0.2);
 }
 
-/* Gold hairline under rating */
+/* Gold diagonal-stripe accent divider */
+.section-divider {
+  height: 6px;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--color-navy) 0 10px,
+    var(--color-gold) 10px 20px
+  );
+}
+
+/* Trade accent: subtle wrench icon as background motif in hero */
+.hero-wrench {
+  position: absolute;
+  bottom: 0;
+  right: var(--space-4);
+  width: 120px;
+  height: 120px;
+  color: rgba(255,255,255,0.04);
+  pointer-events: none;
+}
+
+@media (min-width: 768px) {
+  .hero-wrench {
+    width: 180px;
+    height: 180px;
+    right: var(--space-5);
+  }
+}
 .trust-rating::after {
   content: '';
   display: block;
@@ -475,8 +502,12 @@ p, h1, h2, h3 { text-align: left; }
   background: var(--color-green);
 }
 
-.mobile-call-bar.is-visible {
-  display: block;
+/* Mobile call bar is-visible: scoped to <768px only so the class
+   doesn't override the desktop display:none at wider viewports */
+@media (max-width: 767px) {
+  .mobile-call-bar.is-visible {
+    display: block;
+  }
 }
 
 .mobile-call-link {
@@ -523,11 +554,11 @@ p, h1, h2, h3 { text-align: left; }
   }
 
   .hero-headline {
-    font-size: 3.5rem; /* ~56px desktop */
+    font-size: 4rem; /* 64px desktop */
   }
 
   .hero-context {
-    font-size: 1.25rem;
+    font-size: 1.375rem;
   }
 
   .btn--cta {

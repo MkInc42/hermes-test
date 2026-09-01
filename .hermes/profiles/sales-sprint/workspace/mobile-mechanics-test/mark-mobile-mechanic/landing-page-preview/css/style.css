@@ -207,6 +207,8 @@ p, h1, h2, h3 { text-align: left; }
    S2. HERO
    ============================================================ */
 .hero {
+  position: relative;
+  overflow: hidden;
   background: var(--color-navy);
   padding: var(--space-7) 0 var(--space-6);
 }
@@ -621,6 +623,11 @@ p, h1, h2, h3 { text-align: left; }
    ============================================================ */
 a:focus-visible,
 .btn--cta:focus-visible {
-  outline: 2px solid var(--color-gold);
+  outline: 2px solid var(--color-navy);
   outline-offset: 2px;
+}
+
+/* On dark header background, use white focus ring */
+.site-header a:focus-visible {
+  outline-color: var(--color-white);
 }

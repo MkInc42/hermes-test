@@ -621,13 +621,17 @@ p, h1, h2, h3 { text-align: left; }
 /* ============================================================
    FOCUS STYLES
    ============================================================ */
+/* On paper/light backgrounds — navy ring (visible contrast) */
 a:focus-visible,
 .btn--cta:focus-visible {
   outline: 2px solid var(--color-navy);
   outline-offset: 2px;
 }
 
-/* On dark header background, use white focus ring */
-.site-header a:focus-visible {
+/* On dark backgrounds — white ring for visible contrast */
+.site-header a:focus-visible,
+.hero .btn--cta:focus-visible,
+.site-footer a:focus-visible,
+.mobile-call-bar a:focus-visible {
   outline-color: var(--color-white);
 }
